@@ -30,6 +30,14 @@ test('Lukas sees both organisations', async ({ page }) => {
   await expect(page.getByRole('link', { name: /Hotel Seeblick/ })).toBeVisible();
 });
 
+test('Log out returns to the login page and ends the session', async ({ page }) => {
+  await logIn(page, 'mia@shiftswap.test', PASSWORD);
+  await page.getByRole('button', { name: 'Log out' }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  await page.goto('/orgs');
+  await expect(page).toHaveURL(/\/login$/);
+});
+
 test('wrong password shows a generic error', async ({ page }) => {
   await logIn(page, 'anna@shiftswap.test', 'not-the-password');
   await expect(page.getByRole('alert')).toHaveText('Email or password is incorrect.');
