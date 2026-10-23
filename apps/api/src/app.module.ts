@@ -1,5 +1,8 @@
 import { DynamicModule, Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
+import { AuthModule } from './auth/auth.module';
+import { pathOnly } from './config/log-url';
+import { MeController } from './me/me.controller';
 import { HealthController } from './health/health.controller';
 import type { PrismaClient } from './generated/prisma/client';
 import { PrismaModule } from './prisma/prisma.module';
@@ -18,7 +21,7 @@ export class AppModule {
               req: (req: { id: unknown; method: string; url: string }) => ({
                 id: req.id,
                 method: req.method,
-                url: req.url,
+                url: pathOnly(req.url),
               }),
               res: (res: { statusCode: number }) => ({ statusCode: res.statusCode }),
             },
@@ -26,8 +29,9 @@ export class AppModule {
           },
         }),
         PrismaModule.register(options.prisma),
+        AuthModule,
       ],
-      controllers: [HealthController],
+      controllers: [HealthController, MeController],
     };
   }
 }

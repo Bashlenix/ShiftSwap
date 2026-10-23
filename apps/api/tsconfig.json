@@ -6,7 +6,8 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "sourceMap": true,
-    "types": ["node", "jest"]
+    "types": ["node", "jest"],
+    "allowJs": true
   },
   "include": ["src", "test", "jest.config.ts", "prisma.config.ts"],
   "exclude": ["dist", "node_modules"]

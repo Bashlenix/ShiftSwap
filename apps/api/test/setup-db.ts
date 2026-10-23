@@ -20,6 +20,7 @@ export function testDatabaseUrl(): string {
 export default async function setupDb(): Promise<void> {
   const databaseUrl = testDatabaseUrl();
   process.env.DATABASE_URL = databaseUrl;
+  process.env.BETTER_AUTH_SECRET = 'test-only-secret-0123456789abcdef0123456789';
 
   const admin = new URL(databaseUrl);
   admin.pathname = '/postgres';
