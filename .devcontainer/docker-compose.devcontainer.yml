@@ -2,5 +2,5 @@ services:
   workspace:
     image: mcr.microsoft.com/devcontainers/typescript-node:22
     volumes:
-      - ..:/workspaces/ShiftSwap:cached
+      - .:/workspaces/ShiftSwap:cached
     command: sleep infinity
