@@ -1,5 +1,11 @@
 import type { RuleCode, ShiftDto } from '@shiftswap/shared';
-import type { Shift } from '../generated/prisma/client';
+import type { Prisma, Shift } from '../generated/prisma/client';
+
+/** Shift + required skills + id of its OPEN offer (at most one, partial unique index). */
+export const SHIFT_INCLUDE = {
+  skills: { select: { skillId: true } },
+  offers: { where: { status: 'OPEN' as const }, select: { id: true } },
+} satisfies Prisma.ShiftInclude;
 
 export type ShiftRow = Shift & {
   skills: { skillId: string }[];

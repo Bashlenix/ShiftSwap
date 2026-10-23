@@ -14,14 +14,9 @@ import { checkEligibility } from '../matching/eligibility';
 import { EligibilityLoader } from '../matching/eligibility-loader';
 import { PrismaService } from '../prisma/prisma.service';
 import type { OrgContext } from '../tenancy/org-context.decorator';
-import { toAuditSnapshot, toShiftDto, type ShiftRow } from './shift-mapper';
+import { SHIFT_INCLUDE, toAuditSnapshot, toShiftDto, type ShiftRow } from './shift-mapper';
 
 type Tx = Prisma.TransactionClient;
-
-const SHIFT_INCLUDE = {
-  skills: { select: { skillId: true } },
-  offers: { where: { status: 'OPEN' as const }, select: { id: true } },
-} satisfies Prisma.ShiftInclude;
 
 const notFound = () => new DomainError('NOT_FOUND', 'Not found');
 

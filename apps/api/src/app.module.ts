@@ -6,6 +6,7 @@ import { AuditModule } from './audit/audit.module';
 import { DirectoryModule } from './directory/directory.module';
 import { AvailabilityModule } from './availability/availability.module';
 import { ShiftsModule } from './shifts/shifts.module';
+import { OffersModule } from './offers/offers.module';
 import { MeController } from './me/me.controller';
 import { HealthController } from './health/health.controller';
 import type { PrismaClient } from './generated/prisma/client';
@@ -40,6 +41,7 @@ export class AppModule {
         DirectoryModule,
         ShiftsModule,
         AvailabilityModule,
+        OffersModule,
       ],
       controllers: [HealthController, MeController],
     };
