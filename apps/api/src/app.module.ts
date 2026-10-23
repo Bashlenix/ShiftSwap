@@ -2,6 +2,8 @@ import { DynamicModule, Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './auth/auth.module';
 import { pathOnly } from './config/log-url';
+import { AuditModule } from './audit/audit.module';
+import { DirectoryModule } from './directory/directory.module';
 import { MeController } from './me/me.controller';
 import { HealthController } from './health/health.controller';
 import type { PrismaClient } from './generated/prisma/client';
@@ -32,6 +34,8 @@ export class AppModule {
         }),
         PrismaModule.register(options.prisma),
         AuthModule.register(options.env ?? process.env),
+        AuditModule,
+        DirectoryModule,
       ],
       controllers: [HealthController, MeController],
     };
