@@ -14,7 +14,8 @@ RUN npm ci --workspaces --include-workspace-root
 # --ignore-scripts: dist/generated already holds the Prisma client and shared is already built.
 RUN npm run build -w @shiftswap/api \
   && rm -rf node_modules apps/*/node_modules packages/*/node_modules \
-  && npm ci --omit=dev --ignore-scripts -w @shiftswap/api
+  && npm ci --omit=dev --ignore-scripts -w @shiftswap/api \
+  && mkdir -p apps/api/node_modules
 
 FROM node:22.23.4-bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
@@ -27,7 +28,7 @@ COPY --from=build --chown=node:node /app/package.json package.json
 COPY --from=build --chown=node:node /app/packages/shared/package.json packages/shared/package.json
 COPY --from=build --chown=node:node /app/packages/shared/dist packages/shared/dist
 COPY --from=build --chown=node:node /app/apps/api/package.json apps/api/package.json
-# npm keeps some api deps (e.g. @nestjs/*) in apps/api/node_modules rather than hoisting them.
+# npm may keep some api deps in apps/api/node_modules rather than hoisting them (the dir always exists).
 COPY --from=build --chown=node:node /app/apps/api/node_modules apps/api/node_modules
 COPY --from=build --chown=node:node /app/apps/api/dist apps/api/dist
 COPY --from=build --chown=node:node /app/apps/api/prisma apps/api/prisma

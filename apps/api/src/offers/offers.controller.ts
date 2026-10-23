@@ -11,8 +11,10 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import {
+  approveOfferSchema,
   createOfferSchema,
   versionSchema,
+  type ApproveOfferInput,
   type CreateOfferInput,
   type OfferDetailDto,
   type OfferSummaryDto,
@@ -22,6 +24,7 @@ import type { Response } from 'express';
 import { SessionGuard } from '../auth/session.guard';
 import { DomainError } from '../common/domain-error';
 import { ZodBody } from '../common/zod-body.pipe';
+import { MinAccess } from '../tenancy/min-access.decorator';
 import { Org, type OrgContext } from '../tenancy/org-context.decorator';
 import { OrgGuard } from '../tenancy/org.guard';
 import type { AcceptanceDto } from './offer-views';
@@ -97,5 +100,27 @@ export class OffersController {
     @Body(ZodBody(versionSchema)) body: VersionInput,
   ): Promise<OfferSummaryDto> {
     return this.offers.cancel(org, offerId(id), body.version);
+  }
+
+  @Post(':offerId/approve')
+  @MinAccess('MANAGER')
+  @HttpCode(200)
+  approve(
+    @Org() org: OrgContext,
+    @Param('offerId') id: string,
+    @Body(ZodBody(approveOfferSchema)) body: ApproveOfferInput,
+  ): Promise<OfferDetailDto> {
+    return this.offers.approve(org, offerId(id), body);
+  }
+
+  @Post(':offerId/reject')
+  @MinAccess('MANAGER')
+  @HttpCode(200)
+  reject(
+    @Org() org: OrgContext,
+    @Param('offerId') id: string,
+    @Body(ZodBody(versionSchema)) body: VersionInput,
+  ): Promise<OfferSummaryDto> {
+    return this.offers.reject(org, offerId(id), body.version);
   }
 }

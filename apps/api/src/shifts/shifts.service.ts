@@ -12,6 +12,8 @@ import { DomainError } from '../common/domain-error';
 import type { Prisma } from '../generated/prisma/client';
 import { checkEligibility } from '../matching/eligibility';
 import { EligibilityLoader } from '../matching/eligibility-loader';
+import { OfferLifecycle } from '../offers/offer-lifecycle';
+import { lockShift } from '../offers/offer-locks';
 import { PrismaService } from '../prisma/prisma.service';
 import type { OrgContext } from '../tenancy/org-context.decorator';
 import { SHIFT_INCLUDE, toAuditSnapshot, toShiftDto, type ShiftRow } from './shift-mapper';
@@ -19,6 +21,11 @@ import { SHIFT_INCLUDE, toAuditSnapshot, toShiftDto, type ShiftRow } from './shi
 type Tx = Prisma.TransactionClient;
 
 const notFound = () => new DomainError('NOT_FOUND', 'Not found');
+const RETRY = Symbol('retry');
+const MAX_LOCK_ATTEMPTS = 3;
+
+const sameSet = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((x) => b.includes(x));
 
 @Injectable()
 export class ShiftsService {
@@ -26,6 +33,7 @@ export class ShiftsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly loader: EligibilityLoader,
+    private readonly lifecycle: OfferLifecycle,
   ) {}
 
   async list(org: OrgContext, from: Date, to: Date, mine: boolean): Promise<ShiftDto[]> {
@@ -77,7 +85,6 @@ export class ShiftsService {
         entityId: created.id,
         after: toAuditSnapshot(created),
       });
-      await this.onShiftChanged(tx, null, created);
       return { shift: toShiftDto(created), warnings: await this.warningsFor(tx, org, created) };
     });
   }
@@ -87,7 +94,7 @@ export class ShiftsService {
     shiftId: string,
     input: UpdateShiftInput,
   ): Promise<ShiftWriteResponse> {
-    return this.prisma.$transaction(async (tx) => {
+    return this.inShiftWriteTx(org.orgId, shiftId, async (tx) => {
       const before = await this.findInOrg(org.orgId, shiftId, tx);
 
       const startAt = input.startAt ?? before.startAt.toISOString();
@@ -121,6 +128,27 @@ export class ShiftsService {
         await tx.shiftSkill.deleteMany({ where: { shiftId } });
         await tx.shiftSkill.createMany({ data: skillIds.map((skillId) => ({ shiftId, skillId })) });
       }
+      const newStartAt = new Date(startAt);
+      await this.lifecycle.onShiftChanged(
+        tx,
+        org.orgId,
+        shiftId,
+        {
+          timesOrSkillsChanged:
+            newStartAt.getTime() !== before.startAt.getTime() ||
+            new Date(endAt).getTime() !== before.endAt.getTime() ||
+            (skillIds !== undefined &&
+              !sameSet(
+                skillIds,
+                before.skills.map((s) => s.skillId),
+              )),
+          assigneeChanged:
+            input.assignedMembershipId !== undefined &&
+            input.assignedMembershipId !== before.assignedMembershipId,
+          newStartAt,
+        },
+        org.membershipId,
+      );
       const after = await this.findInOrg(org.orgId, shiftId, tx);
       await this.audit.record(tx, {
         orgId: org.orgId,
@@ -131,13 +159,12 @@ export class ShiftsService {
         before: toAuditSnapshot(before),
         after: toAuditSnapshot(after),
       });
-      await this.onShiftChanged(tx, before, after);
       return { shift: toShiftDto(after), warnings: await this.warningsFor(tx, org, after) };
     });
   }
 
   async remove(org: OrgContext, shiftId: string, version: number): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
+    await this.inShiftWriteTx(org.orgId, shiftId, async (tx) => {
       const before = await this.findInOrg(org.orgId, shiftId, tx);
       const { count } = await tx.shift.updateMany({
         where: { id: shiftId, organizationId: org.orgId, version, deletedAt: null },
@@ -152,25 +179,35 @@ export class ShiftsService {
         entityId: shiftId,
         before: toAuditSnapshot(before),
       });
-      await this.onShiftDeleted(tx, before);
+      await this.lifecycle.onShiftDeleted(tx, org.orgId, shiftId, org.membershipId);
     });
   }
 
-  /* eslint-disable @typescript-eslint/no-unused-vars -- no-op hooks, filled in Task 10 */
-  /** Hook for Task 10 (re-validate / cancel open offers). Runs inside the write transaction. */
-  protected async onShiftChanged(
-    _tx: Tx,
-    _before: ShiftRow | null,
-    _after: ShiftRow,
-  ): Promise<void> {
-    // intentionally empty until Task 10
+  /**
+   * Shift write transaction with the swap lock order offer -> shift (SDD §25): lock the shift's
+   * OPEN offer first, then the shift row. If an offer was created between the plain read and the
+   * shift lock, nothing has been written yet, so the transaction is simply retried.
+   */
+  private async inShiftWriteTx<T>(
+    orgId: string,
+    shiftId: string,
+    fn: (tx: Tx) => Promise<T>,
+  ): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      const result = await this.prisma.$transaction(async (tx) => {
+        const lockedOfferId = await this.lifecycle.lockOpenOfferOf(tx, orgId, shiftId);
+        await lockShift(tx, orgId, shiftId);
+        if (!(await this.lifecycle.openOfferUnchanged(tx, orgId, shiftId, lockedOfferId))) {
+          return RETRY;
+        }
+        return { value: await fn(tx) };
+      });
+      if (result !== RETRY) return result.value;
+      if (attempt >= MAX_LOCK_ATTEMPTS) {
+        throw new DomainError('VERSION_CONFLICT', 'The shift was changed by someone else');
+      }
+    }
   }
-
-  /** Hook for Task 10 (cancel open offers). Runs inside the write transaction. */
-  protected async onShiftDeleted(_tx: Tx, _before: ShiftRow): Promise<void> {
-    // intentionally empty until Task 10
-  }
-  /* eslint-enable @typescript-eslint/no-unused-vars */
 
   /** Version check missed: gone -> 404, otherwise somebody else changed it -> 409. */
   private async failWrite(tx: Tx, orgId: string, shiftId: string): Promise<never> {

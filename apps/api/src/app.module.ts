@@ -1,4 +1,5 @@
 import { DynamicModule, Module } from '@nestjs/common';
+import { ScheduleModule } from '@nestjs/schedule';
 import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './auth/auth.module';
 import { pathOnly } from './config/log-url';
@@ -15,6 +16,7 @@ import { PrismaModule } from './prisma/prisma.module';
 @Module({})
 export class AppModule {
   static register(options: { prisma?: PrismaClient; env?: NodeJS.ProcessEnv } = {}): DynamicModule {
+    const env = options.env ?? process.env;
     return {
       module: AppModule,
       imports: [
@@ -36,12 +38,14 @@ export class AppModule {
           },
         }),
         PrismaModule.register(options.prisma),
-        AuthModule.register(options.env ?? process.env),
+        AuthModule.register(env),
         AuditModule,
         DirectoryModule,
         ShiftsModule,
         AvailabilityModule,
         OffersModule,
+        // Offer expiry scheduler (SDD §25); tests drive OffersService.expireDue directly.
+        ...(env.NODE_ENV === 'test' ? [] : [ScheduleModule.forRoot()]),
       ],
       controllers: [HealthController, MeController],
     };

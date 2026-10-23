@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type {
+  ApproveOfferInput,
   CreateOfferInput,
   OfferDetailDto,
   OfferSummaryDto,
@@ -16,6 +17,7 @@ import type { TargetShift } from '../matching/types';
 import { PrismaService } from '../prisma/prisma.service';
 import { ShiftsService } from '../shifts/shifts.service';
 import type { OrgContext } from '../tenancy/org-context.decorator';
+import { closePending } from './offer-lifecycle';
 import { lockMembership, lockOffer, lockShift } from './offer-locks';
 import {
   ACCEPTANCE_INITIAL_STATUS,
@@ -54,6 +56,14 @@ function assertStillOpen(offer: { status: string; expiresAt: Date }, now: Date):
   if (now >= offer.expiresAt) throw expired();
 }
 
+function assertVersion(current: number, expected: number): void {
+  if (current !== expected) {
+    throw new DomainError('VERSION_CONFLICT', 'The offer was changed by someone else', {
+      currentVersion: current,
+    });
+  }
+}
+
 @Injectable()
 export class OffersService {
   constructor(
@@ -87,7 +97,7 @@ export class OffersService {
         where: { id: offerId },
         data: { status: 'EXPIRED', resolvedAt: now, version: { increment: 1 } },
       });
-      const notSelected = await this.closePending(tx, offerId);
+      const notSelected = await closePending(tx, offerId);
       await this.audit.record(tx, {
         orgId,
         actorMembershipId: null,
@@ -99,6 +109,37 @@ export class OffersService {
         metadata: { notSelectedAcceptanceIds: notSelected },
       });
       return true;
+    });
+  }
+
+  /**
+   * Scheduler sweep over all orgs (system job): one conditional UPDATE expires every OPEN offer
+   * that is due, then PENDING -> NOT_SELECTED and an `offer.expired` audit row per offer, all in
+   * one transaction. An approve holding the offer lock makes the UPDATE wait; READ COMMITTED
+   * then re-evaluates `status = 'OPEN'` on the committed row, so an approved offer is skipped.
+   */
+  async expireDue(now: Date): Promise<number> {
+    return this.prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<{ id: string; organization_id: string }[]>`
+        UPDATE "offers"
+           SET status = 'EXPIRED', version = version + 1, resolved_at = ${now}, updated_at = ${now}
+         WHERE status = 'OPEN' AND expires_at <= ${now}
+        RETURNING id, organization_id`;
+      for (const row of rows) {
+        const after = await tx.offer.findUniqueOrThrow({ where: { id: row.id } });
+        const notSelected = await closePending(tx, row.id);
+        await this.audit.record(tx, {
+          orgId: row.organization_id,
+          actorMembershipId: null,
+          action: 'offer.expired',
+          entityType: 'offer',
+          entityId: row.id,
+          before: { ...offerAudit(after), status: 'OPEN', version: after.version - 1 },
+          after: offerAudit(after),
+          metadata: { notSelectedAcceptanceIds: notSelected },
+        });
+      }
+      return rows.length;
     });
   }
 
@@ -414,11 +455,7 @@ export class OffersService {
         throw new DomainError('FORBIDDEN', 'You cannot cancel this offer');
       }
       if (offer.status === 'EXPIRED') throw expired();
-      if (offer.version !== version) {
-        throw new DomainError('VERSION_CONFLICT', 'The offer was changed by someone else', {
-          currentVersion: offer.version,
-        });
-      }
+      assertVersion(offer.version, version);
       assertOfferTransition(offer.kind, offer.status, 'CANCELLED');
       if (now >= offer.expiresAt) throw expired();
 
@@ -432,11 +469,173 @@ export class OffersService {
           version: { increment: 1 },
         },
       });
-      const notSelected = await this.closePending(tx, offerId);
+      const notSelected = await closePending(tx, offerId);
       await this.audit.record(tx, {
         orgId: org.orgId,
         actorMembershipId: org.membershipId,
         action: 'offer.cancelled',
+        entityType: 'offer',
+        entityId: offerId,
+        before: offerAudit(offer),
+        after: offerAudit(after),
+        metadata: { notSelectedAcceptanceIds: notSelected },
+      });
+    });
+    return toOfferSummary(await this.findOffer(this.prisma, org, offerId));
+  }
+
+  /**
+   * Manager approves one PENDING candidate of a give-away (SDD §17, §25). Lock order
+   * offer -> shift -> candidate membership. A failed re-check INVALIDATES the acceptance and
+   * that change commits; the 422 is thrown only after the transaction.
+   */
+  async approve(
+    org: OrgContext,
+    offerId: string,
+    input: ApproveOfferInput,
+  ): Promise<OfferDetailDto> {
+    const now = new Date();
+    if (await this.expireIfDue(org.orgId, offerId, now)) throw expired();
+
+    const outcome = await this.prisma.$transaction(async (tx) => {
+      const offer = await this.lockOpenOffer(tx, org.orgId, offerId, now);
+      if (offer.kind !== 'GIVE_AWAY') {
+        throw new DomainError('INVALID_TRANSITION', 'Open shifts are claimed, not approved');
+      }
+      assertVersion(offer.version, input.version);
+
+      await lockShift(tx, org.orgId, offer.shiftId);
+      const shift = await this.shifts.findInOrg(org.orgId, offer.shiftId, tx);
+      // Acceptance rows only change under the offer lock we hold, so this read is stable.
+      const acceptance = await tx.acceptance.findFirst({
+        where: { id: input.acceptanceId, organizationId: org.orgId },
+      });
+      if (!acceptance) throw notFound();
+      await lockMembership(tx, org.orgId, acceptance.membershipId);
+      if (acceptance.offerId !== offerId || acceptance.status !== 'PENDING') {
+        throw new DomainError('INVALID_TRANSITION', 'This acceptance cannot be approved');
+      }
+
+      const selfApproved = offer.originalOwnerMembershipId === org.membershipId;
+      if (selfApproved) {
+        const approvers = await tx.membership.count({
+          where: {
+            organizationId: org.orgId,
+            status: 'ACTIVE',
+            accessLevel: { in: ['MANAGER', 'ADMIN'] },
+          },
+        });
+        if (approvers !== 1) {
+          throw new DomainError(
+            'SELF_APPROVAL_FORBIDDEN',
+            'Another manager has to approve your own shift',
+          );
+        }
+      }
+
+      // The shift is still the owner's, so IS_OWNER only fires for the owner, not the candidate.
+      const target = EligibilityLoader.toTargetShift(shift);
+      const loaded = await this.loader.load(tx, org, target, [acceptance.membershipId]);
+      const entry = loaded.get(acceptance.membershipId);
+      const recheck = entry
+        ? checkEligibility(entry.ctx, target)
+        : { eligible: false, failedRules: ['NOT_ACTIVE' as const] };
+      if (!recheck.eligible) {
+        const failedRules = [...recheck.failedRules];
+        assertAcceptanceTransition(acceptance.status, 'INVALIDATED');
+        await tx.acceptance.update({
+          where: { id: acceptance.id },
+          data: {
+            status: 'INVALIDATED',
+            invalidatedReason: { code: 'RECHECK_FAILED', failedRules },
+          },
+        });
+        await this.audit.record(tx, {
+          orgId: org.orgId,
+          actorMembershipId: org.membershipId,
+          action: 'acceptance.invalidated',
+          entityType: 'acceptance',
+          entityId: acceptance.id,
+          before: { offerId, status: acceptance.status },
+          after: { offerId, status: 'INVALIDATED' },
+          metadata: { code: 'RECHECK_FAILED', failedRules },
+        });
+        return { ok: false as const, failedRules };
+      }
+
+      assertOfferTransition(offer.kind, offer.status, 'APPROVED');
+      assertAcceptanceTransition(acceptance.status, 'SELECTED');
+      const { count } = await tx.shift.updateMany({
+        where: { id: shift.id, organizationId: org.orgId, version: shift.version },
+        data: { assignedMembershipId: acceptance.membershipId, version: { increment: 1 } },
+      });
+      if (count === 0) {
+        // Unreachable while the shift row is locked; keep the write conditional anyway.
+        throw new DomainError('VERSION_CONFLICT', 'The shift was changed by someone else');
+      }
+      await tx.acceptance.update({ where: { id: acceptance.id }, data: { status: 'SELECTED' } });
+      const after = await tx.offer.update({
+        where: { id: offerId },
+        data: {
+          status: 'APPROVED',
+          selectedAcceptanceId: acceptance.id,
+          resolvedByMembershipId: org.membershipId,
+          resolvedAt: now,
+          version: { increment: 1 },
+        },
+      });
+      const notSelected = await closePending(tx, offerId);
+      await this.audit.record(tx, {
+        orgId: org.orgId,
+        actorMembershipId: org.membershipId,
+        action: 'offer.approved',
+        entityType: 'offer',
+        entityId: offerId,
+        before: { ...offerAudit(offer), assignedMembershipId: shift.assignedMembershipId },
+        after: { ...offerAudit(after), assignedMembershipId: acceptance.membershipId },
+        metadata: {
+          acceptanceId: acceptance.id,
+          notSelectedAcceptanceIds: notSelected,
+          selfApproved,
+        },
+      });
+      return { ok: true as const };
+    });
+
+    if (!outcome.ok) {
+      throw new DomainError('INELIGIBLE', 'The candidate can no longer take this shift', {
+        failedRules: outcome.failedRules,
+      });
+    }
+    return this.detail(org, offerId);
+  }
+
+  /** Manager rejects a give-away: the owner keeps the shift, PENDING -> NOT_SELECTED. */
+  async reject(org: OrgContext, offerId: string, version: number): Promise<OfferSummaryDto> {
+    const now = new Date();
+    if (await this.expireIfDue(org.orgId, offerId, now)) throw expired();
+
+    await this.prisma.$transaction(async (tx) => {
+      const offer = await this.lockOpenOffer(tx, org.orgId, offerId, now);
+      if (offer.kind !== 'GIVE_AWAY') {
+        throw new DomainError('INVALID_TRANSITION', 'Open shifts cannot be rejected');
+      }
+      assertVersion(offer.version, version);
+      assertOfferTransition(offer.kind, offer.status, 'REJECTED');
+      const after = await tx.offer.update({
+        where: { id: offerId },
+        data: {
+          status: 'REJECTED',
+          resolvedByMembershipId: org.membershipId,
+          resolvedAt: now,
+          version: { increment: 1 },
+        },
+      });
+      const notSelected = await closePending(tx, offerId);
+      await this.audit.record(tx, {
+        orgId: org.orgId,
+        actorMembershipId: org.membershipId,
+        action: 'offer.rejected',
         entityType: 'offer',
         entityId: offerId,
         before: offerAudit(offer),
@@ -486,22 +685,6 @@ export class OffersService {
       });
     }
     return shift;
-  }
-
-  /** PENDING -> NOT_SELECTED for every acceptance of the offer; returns the affected ids. */
-  private async closePending(tx: Tx, offerId: string): Promise<string[]> {
-    const pending = await tx.acceptance.findMany({
-      where: { offerId, status: 'PENDING' },
-      select: { id: true, status: true },
-    });
-    if (pending.length === 0) return [];
-    for (const a of pending) assertAcceptanceTransition(a.status, 'NOT_SELECTED');
-    const ids = pending.map((a) => a.id);
-    await tx.acceptance.updateMany({
-      where: { id: { in: ids }, status: 'PENDING' },
-      data: { status: 'NOT_SELECTED' },
-    });
-    return ids;
   }
 
   /** Live re-check for every acceptance (one loader call); only PENDING ones are scored. */
