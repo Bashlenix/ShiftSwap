@@ -22,8 +22,8 @@ test("Tom approves Lukas for Anna's give-away", async ({ page }) => {
   await page.getByRole('link', { name: new RegExp(`^Review .*${GIVE_AWAY_TIME}`) }).click();
 
   const detail = page.getByRole('region', { name: new RegExp(GIVE_AWAY_TIME) });
-  await expect(detail.getByText('Lukas Wolf')).toBeVisible();
-  await expect(detail.getByText('Mia Hoffmann')).toBeVisible();
+  await expect(detail.getByText('Lukas Wolf', { exact: true })).toBeVisible();
+  await expect(detail.getByText('Mia Hoffmann', { exact: true })).toBeVisible();
   await expect(detail.getByText(/^Score \d+/)).toHaveCount(2);
 
   await detail.getByRole('button', { name: 'Approve Lukas Wolf' }).click();
