@@ -22,7 +22,11 @@ function renderLogin() {
 }
 
 describe('LoginPage', () => {
-  beforeEach(() => signInEmail.mockReset());
+  // Braces matter: a function returned from beforeEach runs as cleanup, and mockReset()
+  // returns the mock itself.
+  beforeEach(() => {
+    signInEmail.mockReset();
+  });
 
   it('shows validation errors linked to the input', async () => {
     renderLogin();
@@ -41,6 +45,29 @@ describe('LoginPage', () => {
     await userEvent.type(screen.getByLabelText('Password'), 'wrong');
     await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Email or password is incorrect.');
+  });
+
+  async function submitValidForm() {
+    renderLogin();
+    await userEvent.type(screen.getByLabelText('Email'), 'anna@shiftswap.test');
+    await userEvent.type(screen.getByLabelText('Password'), 'whatever');
+    await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
+  }
+
+  it('asks the user to wait on 429', async () => {
+    signInEmail.mockResolvedValue({ error: { status: 429 } });
+    await submitValidForm();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Too many attempts. Please wait a few seconds and try again.',
+    );
+  });
+
+  it('shows the generic message when the request throws', async () => {
+    signInEmail.mockRejectedValue(new TypeError('Failed to fetch'));
+    await submitValidForm();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Something went wrong. Please try again.',
+    );
   });
 
   it('navigates to /orgs on success', async () => {

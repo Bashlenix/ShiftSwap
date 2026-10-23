@@ -11,6 +11,13 @@ import { authClient } from '../../lib/auth-client';
 
 const WRONG_CREDENTIALS = 'Email or password is incorrect.';
 const GENERIC_FAILURE = 'Something went wrong. Please try again.';
+const TOO_MANY_ATTEMPTS = 'Too many attempts. Please wait a few seconds and try again.';
+
+function messageFor(status: number): string {
+  if (status === 401) return WRONG_CREDENTIALS;
+  if (status === 429) return TOO_MANY_ATTEMPTS;
+  return GENERIC_FAILURE;
+}
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -26,7 +33,7 @@ export function LoginPage() {
     try {
       const { error } = await authClient.signIn.email(values);
       if (error) {
-        setFormError(error.status === 401 ? WRONG_CREDENTIALS : GENERIC_FAILURE);
+        setFormError(messageFor(error.status));
         return;
       }
       await navigate('/orgs');
