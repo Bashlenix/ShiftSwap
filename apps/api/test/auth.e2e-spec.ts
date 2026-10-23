@@ -10,6 +10,9 @@ describe('auth + /me', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let n = 0;
+  // Each client gets its own IP so rate-limit buckets never leak between tests.
+  let ipN = 0;
+  const nextIp = () => `10.1.${Math.floor(ipN / 250)}.${(ipN++ % 250) + 1}`;
 
   beforeAll(async () => {
     app = await createApp();
@@ -21,16 +24,19 @@ describe('auth + /me', () => {
     await app?.close();
   });
 
-  async function signUp(): Promise<{ email: string; cookie: string; id: string }> {
+  async function signUp(): Promise<{ email: string; cookie: string; id: string; ip: string }> {
+    const ip = nextIp();
     const email = `user${Date.now()}-${n++}@shiftswap.test`;
     await request(app.getHttpServer())
       .post('/api/auth/sign-up/email')
       .set('Origin', ORIGIN)
+      .set('X-Forwarded-For', ip)
       .send({ name: 'Test User', email, password: PASSWORD })
       .expect(200);
     const res = await request(app.getHttpServer())
       .post('/api/auth/sign-in/email')
       .set('Origin', ORIGIN)
+      .set('X-Forwarded-For', ip)
       .send({ email, password: PASSWORD })
       .expect(200);
     const setCookie = res.headers['set-cookie'] as unknown as string[];
@@ -39,7 +45,7 @@ describe('auth + /me', () => {
     expect(setCookie.join(';')).toMatch(/SameSite=Lax/i);
     const cookie = setCookie.map((c) => c.split(';')[0]).join('; ');
     const user = await prisma.user.findFirstOrThrow({ where: { email } });
-    return { email, cookie, id: user.id };
+    return { email, cookie, id: user.id, ip };
   }
 
   it('signs up, signs in and returns /me with no memberships', async () => {
@@ -102,10 +108,11 @@ describe('auth + /me', () => {
   });
 
   it('wrong password is 401', async () => {
-    const { email } = await signUp();
+    const { email, ip } = await signUp();
     await request(app.getHttpServer())
       .post('/api/auth/sign-in/email')
       .set('Origin', ORIGIN)
+      .set('X-Forwarded-For', ip)
       .send({ email, password: 'not-the-password' })
       .expect(401);
   });
@@ -117,5 +124,27 @@ describe('auth + /me', () => {
       .set('Origin', 'https://evil.example')
       .send({ email, password: PASSWORD })
       .expect(403);
+  });
+
+  it('throttles repeated wrong-password sign-ins from one client with 429', async () => {
+    const { email, ip } = await signUp();
+    const statuses: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/sign-in/email')
+        .set('Origin', ORIGIN)
+        .set('X-Forwarded-For', ip)
+        .send({ email, password: 'not-the-password' });
+      statuses.push(res.status);
+    }
+    expect(statuses).toContain(429);
+    expect(statuses[0]).toBe(401);
+    // A different client is not affected.
+    await request(app.getHttpServer())
+      .post('/api/auth/sign-in/email')
+      .set('Origin', ORIGIN)
+      .set('X-Forwarded-For', nextIp())
+      .send({ email, password: PASSWORD })
+      .expect(200);
   });
 });

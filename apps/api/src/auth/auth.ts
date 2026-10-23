@@ -23,7 +23,14 @@ export function createAuth(prisma: PrismaClient, env: NodeJS.ProcessEnv = proces
     },
     emailAndPassword: { enabled: true, requireEmailVerification: false, minPasswordLength: 8 },
     session: { expiresIn: 60 * 60 * 24 * 7 },
-    advanced: { useSecureCookies: useSecureCookies(env) },
+    // Off by default outside production; keep it on (library defaults: sign-in 3 per 10s per IP).
+    rateLimit: { enabled: true },
+    advanced: {
+      useSecureCookies: useSecureCookies(env),
+      // The web proxy sets x-forwarded-for. Loopback hops are skipped so a client-supplied
+      // leftmost value cannot choose its own rate-limit bucket.
+      ipAddress: { ipAddressHeaders: ['x-forwarded-for'], trustedProxies: ['127.0.0.0/8', '::1'] },
+    },
   });
 }
 
