@@ -11,6 +11,7 @@ import { AuditService } from '../audit/audit.service';
 import { DomainError } from '../common/domain-error';
 import type { Prisma } from '../generated/prisma/client';
 import { checkEligibility } from '../matching/eligibility';
+import { EligibilityLoader } from '../matching/eligibility-loader';
 import { PrismaService } from '../prisma/prisma.service';
 import type { OrgContext } from '../tenancy/org-context.decorator';
 import { toAuditSnapshot, toShiftDto, type ShiftRow } from './shift-mapper';
@@ -22,9 +23,6 @@ const SHIFT_INCLUDE = {
   offers: { where: { status: 'OPEN' as const }, select: { id: true } },
 } satisfies Prisma.ShiftInclude;
 
-// Rest (11 h) and week (7 d) lookups need neighbours; 8 days either side is enough.
-const NEIGHBOUR_WINDOW_MS = 8 * 24 * 60 * 60 * 1000;
-
 const notFound = () => new DomainError('NOT_FOUND', 'Not found');
 
 @Injectable()
@@ -32,6 +30,7 @@ export class ShiftsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly loader: EligibilityLoader,
   ) {}
 
   async list(org: OrgContext, from: Date, to: Date, mine: boolean): Promise<ShiftDto[]> {
@@ -208,54 +207,13 @@ export class ShiftsService {
     }
   }
 
-  /** Non-blocking assignment warnings. Private loader; Task 8 replaces it with EligibilityLoader. */
+  /** Non-blocking assignment warnings (IS_OWNER is expected here, so it is dropped). */
   private async warningsFor(tx: Tx, org: OrgContext, shift: ShiftRow): Promise<RuleCode[]> {
     if (!shift.assignedMembershipId) return [];
-    const member = await tx.membership.findFirst({
-      where: { id: shift.assignedMembershipId, organizationId: org.orgId },
-      include: { skills: { select: { skillId: true } } },
-    });
-    if (!member) return [];
-    const from = new Date(shift.startAt.getTime() - NEIGHBOUR_WINDOW_MS);
-    const to = new Date(shift.endAt.getTime() + NEIGHBOUR_WINDOW_MS);
-    const [others, unavailability] = await Promise.all([
-      tx.shift.findMany({
-        where: {
-          organizationId: org.orgId,
-          assignedMembershipId: member.id,
-          deletedAt: null,
-          id: { not: shift.id },
-          startAt: { lt: to },
-          endAt: { gt: from },
-        },
-        select: { id: true, startAt: true, endAt: true },
-      }),
-      tx.unavailability.findMany({
-        where: { membershipId: member.id, startAt: { lt: to }, endAt: { gt: from } },
-        select: { startAt: true, endAt: true },
-      }),
-    ]);
-    const result = checkEligibility(
-      {
-        org: org.policy,
-        candidate: {
-          id: member.id,
-          status: member.status,
-          hasLogin: member.userId !== null,
-          skillIds: member.skills.map((s) => s.skillId),
-          weeklyLimitMin: member.weeklyLimitMin,
-        },
-        candidateShifts: others,
-        unavailability,
-      },
-      {
-        id: shift.id,
-        startAt: shift.startAt,
-        endAt: shift.endAt,
-        requiredSkillIds: shift.skills.map((s) => s.skillId),
-        assignedMembershipId: shift.assignedMembershipId,
-      },
-    );
-    return result.failedRules.filter((r) => r !== 'IS_OWNER');
+    const target = EligibilityLoader.toTargetShift(shift);
+    const loaded = await this.loader.load(tx, org, target, [shift.assignedMembershipId]);
+    const entry = loaded.get(shift.assignedMembershipId);
+    if (!entry) return [];
+    return checkEligibility(entry.ctx, target).failedRules.filter((r) => r !== 'IS_OWNER');
   }
 }
