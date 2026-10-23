@@ -6,7 +6,7 @@ ShiftSwap is a multi-tenant B2B web app that replaces WhatsApp-style shift swapp
 
 [![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Bashlenix/ShiftSwap?quickstart=1)
 
-Click the badge. A browser tab with the login page opens after about a minute. Nothing to type in the terminal.
+Click the badge. A browser tab with the login page opens after a few minutes on the first start (faster once the prebuild is set up). Nothing to type in the terminal.
 
 Password for every account: `ShiftSwap-Demo-2026`
 
