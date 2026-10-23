@@ -40,6 +40,29 @@ describe('seedDemo', () => {
     expect(paul.accessLevel).toBe('EMPLOYEE');
   });
 
+  it('resets tables added later that reference memberships (FK RESTRICT)', async () => {
+    const auth = createAuth(prisma, process.env);
+    await seedDemo(prisma, auth);
+    await prisma.$executeRawUnsafe(
+      `CREATE TABLE test_reset_notes (
+         id serial PRIMARY KEY,
+         membership_id text NOT NULL REFERENCES memberships(id) ON DELETE RESTRICT
+       )`,
+    );
+    try {
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO test_reset_notes (membership_id) SELECT id FROM memberships LIMIT 1`,
+      );
+      expect(await seedDemo(prisma, auth)).toEqual(COUNTS);
+      const [{ count }] = await prisma.$queryRawUnsafe<{ count: bigint }[]>(
+        `SELECT count(*) AS count FROM test_reset_notes`,
+      );
+      expect(Number(count)).toBe(0);
+    } finally {
+      await prisma.$executeRawUnsafe(`DROP TABLE test_reset_notes`);
+    }
+  });
+
   it('lets a demo user sign in with a mixed-case email', async () => {
     await request(app.getHttpServer())
       .post('/api/auth/sign-in/email')

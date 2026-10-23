@@ -2,19 +2,29 @@ import type { Auth } from '../auth/auth';
 import type { PrismaClient } from '../generated/prisma/client';
 import { DEMO_ACCOUNTS, DEMO_ORGS, DEMO_PASSWORD, DEMO_PLACEHOLDERS } from './demo-data';
 
-/** Wipes the demo tables, then recreates the demo data. Safe to run on every start. */
+const quoteIdent = (name: string) => `"${name.replaceAll('"', '""')}"`;
+
+/**
+ * Empties every app table in the current schema (all but Prisma's migration log).
+ * The table list comes from the catalog, so tables added later are covered and FK
+ * order never matters.
+ */
+async function resetAppTables(prisma: PrismaClient): Promise<void> {
+  const tables = await prisma.$queryRaw<{ schemaname: string; tablename: string }[]>`
+    SELECT schemaname, tablename FROM pg_tables
+    WHERE schemaname = current_schema() AND tablename <> '_prisma_migrations'`;
+  if (tables.length === 0) return;
+  const list = tables.map((t) => `${quoteIdent(t.schemaname)}.${quoteIdent(t.tablename)}`);
+  // Identifiers come from the catalog (no user input) and are quoted.
+  await prisma.$executeRawUnsafe(`TRUNCATE TABLE ${list.join(', ')} RESTART IDENTITY CASCADE`);
+}
+
+/** Wipes all app tables, then recreates the demo data. Safe to run on every start. */
 export async function seedDemo(
   prisma: PrismaClient,
   auth: Auth,
 ): Promise<{ users: number; organizations: number; memberships: number }> {
-  await prisma.$transaction([
-    prisma.membership.deleteMany(),
-    prisma.organization.deleteMany(),
-    prisma.session.deleteMany(),
-    prisma.account.deleteMany(),
-    prisma.verification.deleteMany(),
-    prisma.user.deleteMany(),
-  ]);
+  await resetAppTables(prisma);
 
   const orgIds = new Map<string, string>();
   for (const org of DEMO_ORGS) {
