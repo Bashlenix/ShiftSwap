@@ -81,7 +81,10 @@ export class UnavailabilityController {
         where: { id, organizationId: org.orgId, membershipId: org.membershipId },
       });
       if (!row) throw new DomainError('NOT_FOUND', 'Not found');
-      await tx.unavailability.delete({ where: { id } });
+      const { count } = await tx.unavailability.deleteMany({
+        where: { id, organizationId: org.orgId, membershipId: org.membershipId },
+      });
+      if (count === 0) throw new DomainError('NOT_FOUND', 'Not found');
       await this.audit.record(tx, {
         orgId: org.orgId,
         actorMembershipId: org.membershipId,

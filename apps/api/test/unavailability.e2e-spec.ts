@@ -120,6 +120,24 @@ describe('unavailability API', () => {
     expect(await ctx.prisma.unavailability.count({ where: { id: theirs.body.id } })).toBe(1);
   });
 
+  it('two parallel deletes of the same id -> [204, 404], one audit row', async () => {
+    const mine = await api(app, anna.cookie).post(url()).send(body());
+    const results = await Promise.all([
+      api(app, anna.cookie).delete(url(`/${mine.body.id}`)),
+      api(app, anna.cookie).delete(url(`/${mine.body.id}`)),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual([204, 404]);
+    expect(
+      await ctx.prisma.auditLog.count({
+        where: {
+          entityType: 'unavailability',
+          entityId: mine.body.id,
+          action: 'unavailability.deleted',
+        },
+      }),
+    ).toBe(1);
+  });
+
   it('malformed or unknown id -> 404', async () => {
     expect((await api(app, anna.cookie).delete(url('/nope'))).status).toBe(404);
     expect(
