@@ -1,4 +1,7 @@
-import { Link } from 'react-router';
+import { useQueryClient } from '@tanstack/react-query';
+import { Link, useNavigate } from 'react-router';
+import { Button } from '../../components/ui/button';
+import { authClient } from '../../lib/auth-client';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { type AccessLevel, useMe } from './useMe';
 
@@ -10,6 +13,18 @@ const ACCESS_LABEL: Record<AccessLevel, string> = {
 
 export function OrgPickerPage() {
   const { data, isPending, isError } = useMe();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  async function logOut() {
+    try {
+      await authClient.signOut();
+    } finally {
+      await navigate('/login');
+      // Drop cached data so the next user never sees this user's organisations.
+      queryClient.clear();
+    }
+  }
 
   return (
     <main className="mx-auto flex min-h-screen max-w-md items-center p-4">
@@ -37,6 +52,9 @@ export function OrgPickerPage() {
               ))}
             </ul>
           )}
+          <Button variant="outline" className="mt-6 w-full" onClick={() => void logOut()}>
+            Log out
+          </Button>
         </CardContent>
       </Card>
     </main>
