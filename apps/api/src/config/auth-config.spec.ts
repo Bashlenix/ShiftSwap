@@ -40,6 +40,18 @@ describe('auth-config', () => {
     ).toEqual(['http://localhost:5173', 'http://web:5173', 'http://127.0.0.1:5173']);
   });
 
+  // The Codespaces forwarder rewrites the browser Origin to https://localhost:5173.
+  it('trusts the forwarder-rewritten origin only when Codespace origins are enabled', () => {
+    expect(resolveTrustedOrigins(demo)).toEqual([
+      'http://localhost:5173',
+      'https://localhost:5173',
+    ]);
+    expect(isTrustedOrigin('https://localhost:5173', demo)).toBe(true);
+    expect(isTrustedOrigin('https://localhost:5173', {})).toBe(false);
+    expect(isTrustedOrigin('https://localhost:5173', cs)).toBe(false);
+    expect(isTrustedOrigin('https://localhost:3000', demo)).toBe(false);
+  });
+
   it('useSecureCookies is true only in a Codespace', () => {
     expect(useSecureCookies({})).toBe(false);
     expect(useSecureCookies(cs)).toBe(true);

@@ -227,3 +227,118 @@ describe('auth from a Codespace forwarded URL', () => {
       .expect(200);
   });
 });
+
+/**
+ * Requests shaped like a real Codespace: the browser talks https to the GitHub port
+ * forwarder, which rewrites Origin to https://localhost:5173 and sends
+ * X-Forwarded-Proto: https; the Vite proxy (xfwd) then appends its own hop.
+ */
+const TUNNEL_HEADERS = {
+  Host: 'localhost:5173',
+  Origin: 'https://localhost:5173',
+  'X-Forwarded-Proto': 'https,http',
+  'X-Forwarded-Host': 'bashlenix-abc123-5173.app.github.dev',
+  'X-Forwarded-Port': '443,5173',
+  'Sec-Fetch-Site': 'same-origin',
+  'Sec-Fetch-Mode': 'cors',
+  'Sec-Fetch-Dest': 'empty',
+};
+
+describe.each([
+  {
+    name: 'api sees CODESPACE_NAME',
+    env: {
+      ALLOW_CODESPACE_ORIGINS: 'true',
+      CODESPACE_NAME: 'bashlenix-abc123',
+      GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: 'app.github.dev',
+    },
+    cookiePrefix: /^__Secure-[^=]*session_token=/,
+  },
+  {
+    name: 'api does not see CODESPACE_NAME',
+    env: { ALLOW_CODESPACE_ORIGINS: 'true', CODESPACE_NAME: '' },
+    cookiePrefix: /^[^_][^=]*session_token=/,
+  },
+])('auth through the Codespaces port forwarder ($name)', ({ env, cookiePrefix }) => {
+  let app: INestApplication;
+  let ipN = 0;
+  const subnet = env.CODESPACE_NAME ? 3 : 4;
+  const nextIp = () => `10.${subnet}.0.${++ipN}`;
+  const email = `tunnel${subnet}-${Date.now()}@shiftswap.test`;
+  const tunnel = (req: request.Test) => req.set(TUNNEL_HEADERS).set('X-Forwarded-For', nextIp());
+
+  beforeAll(async () => {
+    app = await createApp({ env: { ...process.env, ...env } });
+    await app.init();
+    await tunnel(request(app.getHttpServer()).post('/api/auth/sign-up/email'))
+      .send({ name: 'Tunnel User', email, password: PASSWORD })
+      .expect(200);
+  });
+
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  it('reads the session without a 500', async () => {
+    const res = await tunnel(request(app.getHttpServer()).get('/api/auth/get-session')).expect(200);
+    expect(res.body).toBeNull();
+  });
+
+  it('signs in, uses the cookie and signs out', async () => {
+    const res = await tunnel(request(app.getHttpServer()).post('/api/auth/sign-in/email'))
+      .send({ email, password: PASSWORD })
+      .expect(200);
+    const setCookie = res.headers['set-cookie'] as unknown as string[];
+    const session = setCookie.find((c) => c.includes('session_token='));
+    expect(session).toMatch(cookiePrefix);
+    expect(session).toMatch(/HttpOnly/i);
+    expect(session).toMatch(/SameSite=Lax/i);
+    expect(session).toMatch(/Path=\//i);
+    // Host-only cookie: the browser keeps it for <codespace>-5173.app.github.dev.
+    expect(session).not.toMatch(/Domain=/i);
+    const cookie = setCookie.map((c) => c.split(';')[0]).join('; ');
+
+    await tunnel(request(app.getHttpServer()).get('/api/v1/me')).set('Cookie', cookie).expect(200);
+    await tunnel(request(app.getHttpServer()).post('/api/auth/sign-out'))
+      .set('Cookie', cookie)
+      .send({})
+      .expect(200);
+    await request(app.getHttpServer()).get('/api/v1/me').set('Cookie', cookie).expect(401);
+  });
+
+  it('wrong password without an Origin header is 401, not 500', async () => {
+    await tunnel(request(app.getHttpServer()).post('/api/auth/sign-in/email'))
+      .unset('Origin')
+      .send({ email, password: 'not-the-password' })
+      .expect(401);
+  });
+});
+
+describe('forwarder-rewritten origin without the Codespace flag', () => {
+  let app: INestApplication;
+
+  beforeAll(async () => {
+    app = await createApp({ env: { ...process.env, ALLOW_CODESPACE_ORIGINS: '' } });
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  it('rejects sign-in from https://localhost:5173 with 403', async () => {
+    await request(app.getHttpServer())
+      .post('/api/auth/sign-in/email')
+      .set(TUNNEL_HEADERS)
+      .set('X-Forwarded-For', '10.5.0.1')
+      .send({ email: 'nobody@shiftswap.test', password: PASSWORD })
+      .expect(403);
+  });
+
+  it('answers a malformed Host with 400 instead of 500', async () => {
+    await request(app.getHttpServer())
+      .get('/api/auth/get-session')
+      .set('Host', 'bad host')
+      .expect(400);
+  });
+});
