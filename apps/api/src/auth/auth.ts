@@ -21,6 +21,8 @@ export function createAuth(prisma: PrismaClient, env: NodeJS.ProcessEnv = proces
         ...(origin && isCodespaceOrigin(origin, env) ? [origin] : []),
       ];
     },
+    // Tests provoke wrong-password and rate-limit warnings on purpose; keep errors visible.
+    logger: { level: env.NODE_ENV === 'test' ? 'error' : 'warn' },
     emailAndPassword: { enabled: true, requireEmailVerification: false, minPasswordLength: 8 },
     session: { expiresIn: 60 * 60 * 24 * 7 },
     // Off by default outside production; keep it on (library defaults: sign-in 3 per 10s per IP).

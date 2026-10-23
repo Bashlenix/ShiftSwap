@@ -15,6 +15,8 @@ export class AppModule {
       imports: [
         LoggerModule.forRoot({
           pinoHttp: {
+            // Jest sets NODE_ENV=test; request logs would drown the test output.
+            level: process.env.NODE_ENV === 'test' ? 'silent' : 'info',
             redact: ['req.headers.cookie', 'req.headers.authorization'],
             // IDs only: never log request bodies, emails or names.
             serializers: {
