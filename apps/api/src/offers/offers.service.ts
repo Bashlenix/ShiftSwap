@@ -42,6 +42,18 @@ const notFound = () => new DomainError('NOT_FOUND', 'Not found');
 const expired = () => new DomainError('OFFER_EXPIRED', 'The offer has expired');
 const isManager = (org: OrgContext) => org.accessLevel !== 'EMPLOYEE';
 
+/**
+ * Under the offer lock: EXPIRED (or OPEN but past expiresAt) -> 409 OFFER_EXPIRED,
+ * any other non-OPEN status -> 409 INVALID_TRANSITION.
+ */
+function assertStillOpen(offer: { status: string; expiresAt: Date }, now: Date): void {
+  if (offer.status === 'EXPIRED') throw expired();
+  if (offer.status !== 'OPEN') {
+    throw new DomainError('INVALID_TRANSITION', `The offer is ${offer.status.toLowerCase()}`);
+  }
+  if (now >= offer.expiresAt) throw expired();
+}
+
 @Injectable()
 export class OffersService {
   constructor(
@@ -332,10 +344,10 @@ export class OffersService {
       if (offer.kind !== 'OPEN_SHIFT') {
         throw new DomainError('INVALID_TRANSITION', 'Give-aways are accepted, not claimed');
       }
-      if (offer.status !== 'OPEN') {
+      if (offer.status === 'FILLED') {
         throw new DomainError('OFFER_ALREADY_FILLED', 'This shift has already been taken');
       }
-      if (now >= offer.expiresAt) throw expired();
+      assertStillOpen(offer, now);
 
       const shift = await this.lockAndCheckCandidate(tx, org, offer.shiftId);
       if (shift.assignedMembershipId !== null) {
@@ -394,8 +406,14 @@ export class OffersService {
       const isOwner =
         offer.kind === 'GIVE_AWAY' && offer.originalOwnerMembershipId === org.membershipId;
       if (!isOwner && !isManager(org)) {
+        // Same visibility as the detail view: uninvolved employees cannot see the offer at all.
+        const involved =
+          offer.originalOwnerMembershipId === org.membershipId ||
+          (await tx.acceptance.count({ where: { offerId, membershipId: org.membershipId } })) > 0;
+        if (!involved) throw notFound();
         throw new DomainError('FORBIDDEN', 'You cannot cancel this offer');
       }
+      if (offer.status === 'EXPIRED') throw expired();
       if (offer.version !== version) {
         throw new DomainError('VERSION_CONFLICT', 'The offer was changed by someone else', {
           currentVersion: offer.version,
@@ -444,10 +462,7 @@ export class OffersService {
   private async lockOpenOffer(tx: Tx, orgId: string, offerId: string, now: Date) {
     await lockOffer(tx, orgId, offerId);
     const offer = await tx.offer.findUniqueOrThrow({ where: { id: offerId } });
-    if (offer.status !== 'OPEN') {
-      throw new DomainError('INVALID_TRANSITION', `The offer is ${offer.status.toLowerCase()}`);
-    }
-    if (now >= offer.expiresAt) throw expired();
+    assertStillOpen(offer, now);
     return offer;
   }
 
@@ -489,7 +504,7 @@ export class OffersService {
     return ids;
   }
 
-  /** Live re-check + score per acceptance (one loader call), ranked by rankByScore. */
+  /** Live re-check for every acceptance (one loader call); only PENDING ones are scored. */
   private async rank(
     org: OrgContext,
     target: TargetShift,
@@ -515,7 +530,7 @@ export class OffersService {
         ? checkEligibility(entry.ctx, target)
         : { eligible: false, failedRules: ['NOT_ACTIVE' as const] };
       const score: ScoreResult | null =
-        entry && recheck.eligible
+        entry && recheck.eligible && a.status === 'PENDING'
           ? scoreCandidate({
               preference: 'NEUTRAL',
               weeklyMinutesAfter: entry.weeklyMinutes + shiftMin,
@@ -526,7 +541,10 @@ export class OffersService {
           : null;
       return { ...a, score, recheck };
     });
-    return rankByScore(items).map((a) => ({
+    // PENDING candidates first (ranked by score); the rest (unscored) after them, oldest first.
+    const pending = rankByScore(items.filter((a) => a.status === 'PENDING'));
+    const rest = rankByScore(items.filter((a) => a.status !== 'PENDING'));
+    return [...pending, ...rest].map((a) => ({
       id: a.id,
       membershipId: a.membershipId,
       displayName: a.displayName,

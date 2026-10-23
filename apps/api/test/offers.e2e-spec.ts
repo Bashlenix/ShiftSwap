@@ -221,6 +221,42 @@ describe('offers API', () => {
       expect(accs[0].score!.total).toBeGreaterThan(accs[1].score!.total);
     });
 
+    it('manager detail lists non-PENDING acceptances after PENDING ones, unscored', async () => {
+      // Lukas has more headroom than Mia, but a withdrawn acceptance ranks below a pending one.
+      expect((await api(app, lukas.cookie).delete(url(`/${offerId}/acceptances/me`))).status).toBe(
+        204,
+      );
+      const res = await api(app, tom.cookie).get(url(`/${offerId}`));
+      const accs = res.body.acceptances as {
+        membershipId: string;
+        status: string;
+        score: { total: number } | null;
+        recheck: { eligible: boolean };
+      }[];
+      expect(accs.map((a) => [a.membershipId, a.status])).toEqual([
+        [mia.membershipId, 'PENDING'],
+        [lukas.membershipId, 'WITHDRAWN'],
+      ]);
+      expect(accs[0].score!.total).toBe(70);
+      expect(accs[1].score).toBeNull();
+      expect(accs[1].recheck.eligible).toBe(true);
+      // Restore Lukas's pending acceptance for the following tests.
+      expect((await api(app, lukas.cookie).post(url(`/${offerId}/acceptances`))).status).toBe(200);
+    });
+
+    it('two parallel accepts by the same user -> [200, 201], one row, same id', async () => {
+      const shiftId = await makeShift(anna.membershipId, slot(40, 18, 5));
+      const created = await api(app, anna.cookie).post(url()).send({ shiftId, kind: 'GIVE_AWAY' });
+      expect(created.status).toBe(201);
+      const [a, b] = await Promise.all([
+        api(app, mia.cookie).post(url(`/${created.body.id}/acceptances`)),
+        api(app, mia.cookie).post(url(`/${created.body.id}/acceptances`)),
+      ]);
+      expect([a.status, b.status].sort()).toEqual([200, 201]);
+      expect(a.body.id).toBe(b.body.id);
+      expect(await ctx.prisma.acceptance.count({ where: { offerId: created.body.id } })).toBe(1);
+    });
+
     it('employee detail: involved see summary + own acceptance only; others 404', async () => {
       const lukasView = await api(app, lukas.cookie).get(url(`/${offerId}`));
       expect(lukasView.status).toBe(200);
@@ -262,7 +298,7 @@ describe('offers API', () => {
       expect(await ctx.prisma.acceptance.count({ where: { offerId: created.body.id } })).toBe(0);
     });
 
-    it('cancel with a stale version -> 409 VERSION_CONFLICT; Lukas cannot cancel -> 403', async () => {
+    it('cancel: stale version -> 409; acceptance holder -> 403; uninvolved employee -> 404', async () => {
       const stale = await api(app, anna.cookie)
         .post(url(`/${offerId}/cancel`))
         .send({ version: 2 });
@@ -272,6 +308,11 @@ describe('offers API', () => {
         .post(url(`/${offerId}/cancel`))
         .send({ version: 1 });
       expect(lukasCancel.status).toBe(403);
+      const jonasCancel = await api(app, jonas.cookie)
+        .post(url(`/${offerId}/cancel`))
+        .send({ version: 1 });
+      expect(jonasCancel.status).toBe(404);
+      expect(jonasCancel.body.error.code).toBe('NOT_FOUND');
     });
 
     it('Anna cancels -> CANCELLED / WITHDRAWN, pending acceptances NOT_SELECTED', async () => {
@@ -322,6 +363,24 @@ describe('offers API', () => {
         where: { organizationId: orgId, action: 'offer.expired', entityId: id },
       });
       expect(audit).toBe(1);
+
+      // Already EXPIRED (no lazy expiry this time): still OFFER_EXPIRED, not INVALID_TRANSITION.
+      const again = await api(app, lukas.cookie).post(url(`/${id}/acceptances`));
+      expect(again.status).toBe(409);
+      expect(again.body.error.code).toBe('OFFER_EXPIRED');
+      const withdraw = await api(app, mia.cookie).delete(url(`/${id}/acceptances/me`));
+      expect(withdraw.status).toBe(409);
+      expect(withdraw.body.error.code).toBe('OFFER_EXPIRED');
+      const cancel = await api(app, anna.cookie)
+        .post(url(`/${id}/cancel`))
+        .send({ version: 2 });
+      expect(cancel.status).toBe(409);
+      expect(cancel.body.error.code).toBe('OFFER_EXPIRED');
+      expect(
+        await ctx.prisma.auditLog.count({
+          where: { organizationId: orgId, action: 'offer.expired', entityId: id },
+        }),
+      ).toBe(1);
     });
   });
 
@@ -391,6 +450,41 @@ describe('offers API', () => {
       const offer = await ctx.prisma.offer.findUniqueOrThrow({ where: { id: openOfferId } });
       expect(offer.status).toBe('FILLED');
       expect(offer.selectedAcceptanceId).toBe(selected[0].id);
+    });
+  });
+
+  describe('claims on closed open-shift offers', () => {
+    const postOpenShift = async (daysAhead: number) => {
+      const shiftId = await makeShift(null, slot(daysAhead, 18, 5));
+      const res = await api(app, tom.cookie).post(url()).send({ shiftId, kind: 'OPEN_SHIFT' });
+      expect(res.status).toBe(201);
+      return res.body.id as string;
+    };
+
+    it('claim on an expired open shift -> 409 OFFER_EXPIRED (first and later requests)', async () => {
+      const id = await postOpenShift(14);
+      await ctx.prisma.offer.update({
+        where: { id },
+        data: { expiresAt: new Date(Date.now() - 60_000) },
+      });
+      const first = await api(app, lukas.cookie).post(url(`/${id}/claim`));
+      expect(first.status).toBe(409);
+      expect(first.body.error.code).toBe('OFFER_EXPIRED');
+      const second = await api(app, mia.cookie).post(url(`/${id}/claim`));
+      expect(second.status).toBe(409);
+      expect(second.body.error.code).toBe('OFFER_EXPIRED');
+    });
+
+    it('claim on a cancelled open shift -> 409 INVALID_TRANSITION', async () => {
+      const id = await postOpenShift(16);
+      const cancel = await api(app, tom.cookie)
+        .post(url(`/${id}/cancel`))
+        .send({ version: 1 });
+      expect(cancel.status).toBe(200);
+      expect(cancel.body.status).toBe('CANCELLED');
+      const res = await api(app, lukas.cookie).post(url(`/${id}/claim`));
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe('INVALID_TRANSITION');
     });
   });
 
