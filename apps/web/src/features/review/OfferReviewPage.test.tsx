@@ -187,7 +187,10 @@ describe('OfferReviewPage', () => {
     );
     render();
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Lukas Wolf' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Overlaps another shift');
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Lukas Wolf can no longer take this shift: Overlaps another shift',
+    );
+    expect(screen.getByRole('alert')).not.toHaveTextContent("You can't take");
   });
 
   it('focuses the detail heading and clears the notice when switching offers', async () => {

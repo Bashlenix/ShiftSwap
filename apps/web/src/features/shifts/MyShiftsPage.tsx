@@ -42,6 +42,12 @@ export function MyShiftsPage() {
     queryFn: () => apiFetch<OfferSummaryDto[]>(orgApi(org, '/offers?scope=mine')),
   });
 
+  // scope=mine also returns offers I only accepted; those are not mine to describe.
+  const ownOffers = myOffers.data?.filter((o) => o.originalOwnerMembershipId === org.membershipId);
+  const acceptedOffers = myOffers.data?.filter(
+    (o) => o.originalOwnerMembershipId !== org.membershipId,
+  );
+
   const openGiveAway = (shiftId: string) =>
     myOffers.data?.find(
       (o) => o.shift.id === shiftId && o.status === 'OPEN' && o.kind === 'GIVE_AWAY',
@@ -143,8 +149,8 @@ export function MyShiftsPage() {
         <h2 id="my-offers-heading" className="text-xl font-semibold">
           My offers
         </h2>
-        {myOffers.data?.length === 0 && <p>You have not offered any shifts.</p>}
-        {myOffers.data && myOffers.data.length > 0 && (
+        {ownOffers?.length === 0 && <p>You have not offered any shifts.</p>}
+        {ownOffers && ownOffers.length > 0 && (
           <table className="w-full text-left text-sm">
             <caption className="sr-only">Shifts you have offered</caption>
             <thead>
@@ -161,7 +167,7 @@ export function MyShiftsPage() {
               </tr>
             </thead>
             <tbody>
-              {myOffers.data.map((o) => (
+              {ownOffers.map((o) => (
                 <tr key={o.id} className="border-b border-slate-200">
                   <th scope="row" className="p-2 font-medium">
                     {formatShiftTime(o.shift.startAt, o.shift.endAt, org.timezone)}
@@ -170,6 +176,44 @@ export function MyShiftsPage() {
                     <StatusBadge status={o.status} />
                   </td>
                   <td className="p-2">{o.pendingCount}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      <section aria-labelledby="my-acceptances-heading" className="flex flex-col gap-4">
+        <h2 id="my-acceptances-heading" className="text-xl font-semibold">
+          My acceptances
+        </h2>
+        {acceptedOffers?.length === 0 && <p>You have not asked to take any shifts.</p>}
+        {acceptedOffers && acceptedOffers.length > 0 && (
+          <table className="w-full text-left text-sm">
+            <caption className="sr-only">Shifts you have asked to take</caption>
+            <thead>
+              <tr className="border-b border-slate-300">
+                <th scope="col" className="p-2">
+                  Time
+                </th>
+                <th scope="col" className="p-2">
+                  Skills
+                </th>
+                <th scope="col" className="p-2">
+                  Status
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {acceptedOffers.map((o) => (
+                <tr key={o.id} className="border-b border-slate-200">
+                  <th scope="row" className="p-2 font-medium">
+                    {formatShiftTime(o.shift.startAt, o.shift.endAt, org.timezone)}
+                  </th>
+                  <td className="p-2">{skillNames(o.shift.requiredSkillIds)}</td>
+                  <td className="p-2">
+                    {o.myAcceptanceStatus && <StatusBadge status={o.myAcceptanceStatus} />}
+                  </td>
                 </tr>
               ))}
             </tbody>

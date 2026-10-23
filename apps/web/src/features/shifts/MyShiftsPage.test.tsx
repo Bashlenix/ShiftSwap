@@ -139,6 +139,39 @@ describe('MyShiftsPage', () => {
     expect(await within(section).findByText('Filled')).toBeVisible();
   });
 
+  it('lists accepted-only offers under My acceptances, not My offers', async () => {
+    const s = shift('s1', 48, { assignedMembershipId: 'mem-9' });
+    setup(
+      [],
+      [
+        offerFor(s, {
+          status: 'FILLED',
+          originalOwnerMembershipId: 'mem-9',
+          myAcceptanceStatus: 'NOT_SELECTED',
+        }),
+      ],
+    );
+    renderWithOrg(<MyShiftsPage />);
+    const acceptances = await screen.findByRole('region', { name: 'My acceptances' });
+    expect(await within(acceptances).findByText('Not selected')).toBeVisible();
+    expect(within(acceptances).getByText('Barista')).toBeVisible();
+    expect(
+      within(screen.getByRole('table', { name: 'Shifts you have asked to take' })).getAllByRole(
+        'row',
+      ),
+    ).toHaveLength(2);
+    const offers = screen.getByRole('region', { name: 'My offers' });
+    expect(within(offers).getByText('You have not offered any shifts.')).toBeVisible();
+    expect(within(offers).queryByText('Approved')).toBeNull();
+    expect(within(offers).queryByText('Filled')).toBeNull();
+  });
+
+  it('shows an empty state for My acceptances', async () => {
+    setup([]);
+    renderWithOrg(<MyShiftsPage />);
+    expect(await screen.findByText('You have not asked to take any shifts.')).toBeVisible();
+  });
+
   it('shows errors in an alert region', async () => {
     const { ApiError } = await import('../../lib/api');
     setup([shift('s1', 48)]);

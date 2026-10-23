@@ -40,9 +40,9 @@ export function OfferReviewDetail({ offerId }: { offerId: string }) {
 
   const o = offer.data;
   const open = o.status === 'OPEN';
-  const act = (path: string, body: object, done: string) => {
+  const act = (path: string, body: object, done: string, candidate?: string) => {
     focusFeedback.current = true;
-    mutation.mutate({ method: 'POST', path: orgApi(org, path), body, notice: done });
+    mutation.mutate({ method: 'POST', path: orgApi(org, path), body, notice: done, candidate });
   };
 
   return (
@@ -97,6 +97,7 @@ export function OfferReviewDetail({ offerId }: { offerId: string }) {
                     `/offers/${o.id}/approve`,
                     { acceptanceId: a.id, version: o.version },
                     `Approved ${a.displayName}.`,
+                    a.displayName,
                   )
                 }
               >

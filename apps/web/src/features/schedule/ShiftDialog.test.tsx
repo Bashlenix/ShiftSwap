@@ -231,4 +231,43 @@ describe('ShiftDialog', () => {
       }),
     );
   });
+
+  it('shows the API validation message, e.g. the 16-hour limit', async () => {
+    apiSend.mockRejectedValue(
+      new ApiError(400, {
+        error: {
+          code: 'VALIDATION_FAILED',
+          message: 'x',
+          details: { issues: [{ path: 'endAt', message: 'A shift can be at most 16 hours' }] },
+        },
+      }),
+    );
+    open();
+    await fillTimes('06:00', '23:00');
+    await userEvent.click(screen.getByRole('button', { name: 'Save shift' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('A shift can be at most 16 hours');
+  });
+
+  it('withdraws an open shift after confirming, using the offer version', async () => {
+    const openShift = { ...stored, assignedMembershipId: null, openOfferId: 'o1' };
+    apiFetch.mockResolvedValue({ id: 'o1', version: 7, status: 'OPEN' });
+    apiSend.mockResolvedValue({});
+    const onClose = open(openShift);
+    await userEvent.click(screen.getByRole('button', { name: 'Withdraw open shift' }));
+    expect(screen.getByText('Withdraw this open shift?')).toBeVisible();
+    expect(apiSend).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Yes, withdraw' }));
+    await waitFor(() =>
+      expect(apiSend).toHaveBeenCalledWith('POST', '/api/v1/orgs/org-1/offers/o1/cancel', {
+        version: 7,
+      }),
+    );
+    expect(apiFetch).toHaveBeenCalledWith('/api/v1/orgs/org-1/offers/o1');
+    await waitFor(() => expect(onClose).toHaveBeenCalledWith({ notice: 'Open shift withdrawn.' }));
+  });
+
+  it('offers no withdraw button without an open offer', () => {
+    open({ ...stored, assignedMembershipId: null });
+    expect(screen.queryByRole('button', { name: 'Withdraw open shift' })).toBeNull();
+  });
 });

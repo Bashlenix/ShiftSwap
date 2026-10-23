@@ -57,6 +57,10 @@ test('Lukas now has the shift Tom approved', async ({ page }) => {
   await expect(
     page.getByRole('rowheader', { name: new RegExp(GIVE_AWAY_TIME) }).first(),
   ).toBeVisible();
+  const acceptances = page.getByRole('region', { name: 'My acceptances' });
+  await expect(
+    acceptances.getByRole('row', { name: new RegExp(GIVE_AWAY_TIME) }).getByText(/^\W*Selected$/),
+  ).toBeVisible();
 });
 
 test('Lukas is not offered the Barista open shift', async ({ page }) => {

@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   RULE_LABELS,
   type MemberDto,
+  type OfferDetailDto,
   type RuleCode,
   type ShiftDto,
   type ShiftWriteResponse,
@@ -13,7 +14,7 @@ import { Button } from '../../components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../components/ui/dialog';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
-import { ApiError, apiSend } from '../../lib/api';
+import { ApiError, apiFetch, apiSend } from '../../lib/api';
 import { errorMessage } from '../../lib/error-messages';
 import { localToInstant } from '../../lib/format';
 import { orgApi, useOrg } from '../org/useOrg';
@@ -97,6 +98,8 @@ function ShiftForm({
 
   const canPostOpen = !shift || shift.openOfferId === null;
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmingWithdraw, setConfirmingWithdraw] = useState(false);
+  const openOfferId = shift && shift.assignedMembershipId === null ? shift.openOfferId : null;
   const endsNextDay = end !== '' && start !== '' && end <= start;
 
   const refresh = () =>
@@ -204,6 +207,18 @@ function ShiftForm({
     });
   }
 
+  function withdrawOpenShift() {
+    if (!openOfferId) return;
+    void run(async () => {
+      // The shift only carries the offer id; the cancel call needs the offer's version.
+      const offer = await apiFetch<OfferDetailDto>(orgApi(org, `/offers/${openOfferId}`));
+      await apiSend('POST', orgApi(org, `/offers/${openOfferId}/cancel`), {
+        version: offer.version,
+      });
+      return { notice: 'Open shift withdrawn.' };
+    });
+  }
+
   const toggleSkill = (id: string) =>
     setSkillIds((cur) => (cur.includes(id) ? cur.filter((s) => s !== id) : [...cur, id]));
 
@@ -239,6 +254,23 @@ function ShiftForm({
             </Button>
             <Button disabled={pending} onClick={remove}>
               Yes, delete
+            </Button>
+          </div>
+          <Feedback error={error} />
+        </div>
+      ) : confirmingWithdraw ? (
+        <div className="mt-4 flex flex-col gap-4">
+          <p className="text-sm font-medium">Withdraw this open shift?</p>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              disabled={pending}
+              onClick={() => setConfirmingWithdraw(false)}
+            >
+              Keep open
+            </Button>
+            <Button disabled={pending} onClick={withdrawOpenShift}>
+              Yes, withdraw
             </Button>
           </div>
           <Feedback error={error} />
@@ -351,6 +383,16 @@ function ShiftForm({
                 onClick={() => setConfirmingDelete(true)}
               >
                 Delete shift
+              </Button>
+            )}
+            {openOfferId && (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={pending}
+                onClick={() => setConfirmingWithdraw(true)}
+              >
+                Withdraw open shift
               </Button>
             )}
             <Button type="button" variant="outline" onClick={() => onClose()}>
