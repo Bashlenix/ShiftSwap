@@ -176,6 +176,8 @@ model MembershipSkill {
   @@map("membership_skills")
 }
 
+// SQL-only constraint (not expressible in Prisma): CHECK shifts_end_after_start (end_at > start_at).
+// Lives in migration *_shifts_offers; future migrations must not drop it.
 model Shift {
   id                   String       @id @default(uuid())
   organizationId       String       @map("organization_id")
@@ -211,6 +213,8 @@ model ShiftSkill {
   @@map("shift_skills")
 }
 
+// SQL-only constraint (not expressible in Prisma): CHECK unavailabilities_end_after_start (end_at > start_at).
+// Lives in migration *_shifts_offers; future migrations must not drop it.
 model Unavailability {
   id             String       @id @default(uuid())
   organizationId String       @map("organization_id")
@@ -225,6 +229,8 @@ model Unavailability {
   @@map("unavailabilities")
 }
 
+// SQL-only constraint (not expressible in Prisma): partial unique index offers_one_open_per_shift ON offers (shift_id) WHERE status = 'OPEN'.
+// Lives in migration *_shifts_offers; future migrations must not drop it.
 model Offer {
   id                        String       @id @default(uuid())
   organizationId            String       @map("organization_id")

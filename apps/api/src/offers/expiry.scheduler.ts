@@ -6,7 +6,7 @@ export const EXPIRY_INTERVAL_MS = 5 * 60 * 1000;
 
 /**
  * Expires due OPEN offers every 5 minutes (lazy expiry covers the gaps). Only registered when
- * ScheduleModule is loaded, i.e. not under NODE_ENV=test. Logs counts and error names only.
+ * ScheduleModule is loaded, i.e. not under NODE_ENV=test. Logs non-zero counts and error names only.
  */
 @Injectable()
 export class ExpiryScheduler {
@@ -18,7 +18,7 @@ export class ExpiryScheduler {
   async tick(): Promise<void> {
     try {
       const expired = await this.offers.expireDue(new Date());
-      this.logger.log({ expired });
+      if (expired > 0) this.logger.log({ expired });
     } catch (err) {
       this.logger.error({ err: err instanceof Error ? err.name : typeof err });
     }

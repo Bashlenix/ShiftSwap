@@ -30,6 +30,12 @@ describe('ExpiryScheduler', () => {
     expect(log).toHaveBeenCalledWith({ expired: 3 });
   });
 
+  it('stays silent when nothing expired', async () => {
+    const scheduler = make(jest.fn().mockResolvedValue(0));
+    await scheduler.tick();
+    expect(log).not.toHaveBeenCalled();
+  });
+
   it('swallows and logs errors by name only', async () => {
     const boom = new TypeError('secret detail anna@example.com');
     const expireDue = jest.fn().mockRejectedValue(boom);
