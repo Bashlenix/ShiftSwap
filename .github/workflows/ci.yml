@@ -83,9 +83,15 @@ jobs:
       - name: Install test tooling
         run: npm ci --ignore-scripts
       - name: Start the dev container (same path as a Codespace)
-        run: npx --yes @devcontainers/cli up --workspace-folder .
+        run: npx --yes @devcontainers/cli@0.89.0 up --workspace-folder .
       - name: Wait for the login page
-        run: npx --yes wait-on -t 300000 http-get://localhost:5173/login
+        run: npx --yes wait-on@9.5.1 -t 300000 http-get://localhost:5173/login
+      # Codespaces forwards ports from inside the workspace container, not from the VM,
+      # so the web app (and Mailpit) must be reachable from there.
+      - name: Web and Mailpit reachable from the workspace container
+        run: |
+          npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . node -e "fetch('http://localhost:5173/login').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+          npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . node -e "fetch('http://mailpit:8025/').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
       - name: Smoke test
         run: scripts/smoke-stack.sh
       - name: Install Playwright browser

@@ -4,10 +4,10 @@
   "service": "workspace",
   "workspaceFolder": "/workspaces/ShiftSwap",
   "runServices": ["db", "mailpit", "api", "web", "workspace"],
-  "forwardPorts": [5173, 8025],
+  "forwardPorts": [5173, "mailpit:8025"],
   "portsAttributes": {
     "5173": { "label": "ShiftSwap", "onAutoForward": "openBrowser" },
-    "8025": { "label": "Mailpit (demo inbox)", "onAutoForward": "silent" },
+    "mailpit:8025": { "label": "Mailpit (demo inbox)", "onAutoForward": "silent" },
     "5432": { "onAutoForward": "ignore" }
   },
   "onCreateCommand": "npm ci",

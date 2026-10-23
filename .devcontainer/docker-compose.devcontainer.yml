@@ -1,6 +1,10 @@
 services:
   workspace:
-    image: mcr.microsoft.com/devcontainers/typescript-node:22
+    image: mcr.microsoft.com/devcontainers/typescript-node:5.2.3-22-bookworm
     volumes:
       - .:/workspaces/ShiftSwap:cached
     command: sleep infinity
+    # Codespaces forwards ports from inside this (primary) container. Sharing the web
+    # container's network makes localhost:5173 here the web app, so the forwarded URL
+    # stays https://<codespace>-5173.app.github.dev.
+    network_mode: service:web
