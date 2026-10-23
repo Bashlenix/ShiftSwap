@@ -72,7 +72,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      COMPOSE_PROJECT_NAME: shiftswap-devcontainer
       COMPOSE_FILES: -f docker-compose.yml -f .devcontainer/docker-compose.devcontainer.yml
     steps:
       - uses: actions/checkout@v4
@@ -92,6 +91,10 @@ jobs:
         run: |
           npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . node -e "fetch('http://localhost:5173/login').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
           npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . node -e "fetch('http://mailpit:8025/').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+      - name: Debug tooling works in the workspace container (docker compose logs, sshd)
+        run: |
+          npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . docker compose logs --tail 5 api
+          npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . sh -c 'command -v sshd || ls /usr/local/share/ssh-init.sh'
       - name: Smoke test
         run: scripts/smoke-stack.sh
       - name: Install Playwright browser

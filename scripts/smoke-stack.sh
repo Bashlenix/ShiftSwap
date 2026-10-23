@@ -7,7 +7,8 @@ ORIGIN="http://localhost:5173"
 EMAIL="anna@shiftswap.test"
 PASSWORD="ShiftSwap-Demo-2026"
 JAR="$(mktemp)"
-trap 'rm -f "$JAR"' EXIT
+TUNNEL_JAR="$(mktemp)"
+trap 'rm -f "$JAR" "$TUNNEL_JAR"' EXIT
 
 pass() { echo "PASS: $1"; }
 fail() { echo "FAIL: $1"; exit 1; }
@@ -17,6 +18,15 @@ code() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
 sign_in() {
   code -c "$JAR" -H "Origin: $ORIGIN" -H 'Content-Type: application/json' \
     -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" "$BASE/api/auth/sign-in/email"
+}
+
+# Request shaped like the GitHub Codespaces port forwarder: it rewrites the browser Origin
+# to https://localhost:5173 and sends X-Forwarded-Proto: https (the Vite proxy appends
+# its own hop). Only trusted because the stack runs with ALLOW_CODESPACE_ORIGINS=true.
+tunnel() {
+  curl -s -o /dev/null -w '%{http_code}' -b "$TUNNEL_JAR" -c "$TUNNEL_JAR" \
+    -H 'Origin: https://localhost:5173' -H 'X-Forwarded-Proto: https' \
+    -H 'Sec-Fetch-Site: same-origin' -H 'Sec-Fetch-Mode: cors' "$@"
 }
 
 # True (exit 0) when the text contains any demo account email (all use @shiftswap.test).
@@ -30,6 +40,16 @@ main() {
   me="$(curl -s -b "$JAR" "$BASE/api/v1/me")"
   grep -q 'Café Lindenhof' <<<"$me" \
     && pass "/api/v1/me lists Café Lindenhof" || fail "/api/v1/me missing Café Lindenhof"
+
+  [ "$(tunnel "$BASE/api/auth/get-session")" = "200" ] \
+    && pass "forwarder-shaped get-session -> 200" || fail "forwarder-shaped get-session"
+  [ "$(tunnel -H 'Content-Type: application/json' \
+    -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" "$BASE/api/auth/sign-in/email")" = "200" ] \
+    && pass "forwarder-shaped sign-in -> 200" || fail "forwarder-shaped sign-in"
+  [ "$(tunnel "$BASE/api/v1/me")" = "200" ] \
+    && pass "forwarder-shaped /api/v1/me -> 200" || fail "forwarder-shaped /api/v1/me"
+  [ "$(tunnel -H 'Content-Type: application/json' -d '{}' "$BASE/api/auth/sign-out")" = "200" ] \
+    && pass "forwarder-shaped sign-out -> 200" || fail "forwarder-shaped sign-out"
 
   echo "Restarting api..."
   docker compose restart api
