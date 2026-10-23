@@ -19,9 +19,11 @@ Password for every account: `ShiftSwap-Demo-2026`
 | mia@shiftswap.test   | Mia Hoffmann | Café Lindenhof — EMPLOYEE                            |
 | sara@shiftswap.test  | Sara Yilmaz  | Hotel Seeblick — ADMIN                               |
 
-Demo emails land in Mailpit: Ports tab → "Mailpit (demo inbox)" (port 8025).
+No feature sends email yet, so the demo inbox (Mailpit) is not exposed in the Codespace.
 
-If no tab opened: Ports tab → ShiftSwap → globe icon.
+If no tab opened: Ports tab → ShiftSwap (port 5173) → globe icon.
+
+If something goes wrong in the Codespace, the terminal can show the server logs: `docker compose logs api` (or `web`, `db`). From your own machine: `gh codespace logs` or `gh codespace ssh`.
 
 Restarting or resuming the Codespace resets the demo data and logs you out. That is on purpose: every start gives a clean demo.
 

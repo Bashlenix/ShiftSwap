@@ -13,4 +13,4 @@ Password for every account: `ShiftSwap-Demo-2026`
 
 Placeholder (no login, no email): Paul Weber, Café Lindenhof — EMPLOYEE.
 
-Mailpit inbox: port 8025 (Ports tab).
+Demo inbox (Mailpit): not exposed yet — no feature sends email yet.
