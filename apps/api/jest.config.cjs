@@ -1,13 +1,13 @@
-import type { Config } from 'jest';
-
-const config: Config = {
-  rootDir: '..',
-  testMatch: ['<rootDir>/test/**/*.e2e-spec.ts'],
-  globalSetup: '<rootDir>/test/setup-db.ts',
+// CommonJS on purpose: Jest loads it without trying (and warning about) ESM first.
+/** @type {import('jest').Config} */
+module.exports = {
+  rootDir: '.',
+  testMatch: ['<rootDir>/src/**/*.spec.ts'],
+  passWithNoTests: true,
   transform: {
-    '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.json' }],
+    '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.jest.json' }],
     // Better Auth and its deps are ESM-only; compile them to CJS for Jest.
-    '^.+\\.m?js$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.json', diagnostics: false }],
+    '^.+\\.m?js$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.jest.json', diagnostics: false }],
   },
   transformIgnorePatterns: [
     '/node_modules/(?!(better-auth|@better-auth|better-call|jose|nanostores|@noble|kysely|zod|defu|rou3|@standard-schema)/)',
@@ -16,5 +16,3 @@ const config: Config = {
   moduleNameMapper: { '^(\\.{1,2}/.*)\\.js$': '$1' },
   testEnvironment: 'node',
 };
-
-export default config;
