@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  stack-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the stack
+        run: docker compose up -d --build --wait
+      - name: Smoke test
+        run: scripts/smoke-stack.sh
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs api web db
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v

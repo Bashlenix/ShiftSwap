@@ -1,0 +1,17 @@
+**/node_modules
+**/dist
+**/coverage
+**/.env
+**/.env.*
+!**/.env.example
+.git
+.superpowers
+.venv
+.claude
+docs
+playwright-report
+test-results
+**/*.tsbuildinfo
+apps/api/src/generated
+.DS_Store
+*.log
