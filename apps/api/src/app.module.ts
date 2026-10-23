@@ -4,6 +4,7 @@ import { AuthModule } from './auth/auth.module';
 import { pathOnly } from './config/log-url';
 import { AuditModule } from './audit/audit.module';
 import { DirectoryModule } from './directory/directory.module';
+import { ShiftsModule } from './shifts/shifts.module';
 import { MeController } from './me/me.controller';
 import { HealthController } from './health/health.controller';
 import type { PrismaClient } from './generated/prisma/client';
@@ -36,6 +37,7 @@ export class AppModule {
         AuthModule.register(options.env ?? process.env),
         AuditModule,
         DirectoryModule,
+        ShiftsModule,
       ],
       controllers: [HealthController, MeController],
     };

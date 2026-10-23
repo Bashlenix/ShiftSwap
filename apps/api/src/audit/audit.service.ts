@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { Prisma } from '../generated/prisma/client';
+import { Prisma } from '../generated/prisma/client';
 
 export interface AuditEntry {
   orgId: string;
@@ -9,10 +9,12 @@ export interface AuditEntry {
   entityId: string;
   before?: unknown;
   after?: unknown;
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> | null;
 }
 
-const json = (v: unknown) => (v === undefined ? undefined : (v as Prisma.InputJsonValue));
+/** undefined -> omit the field; null -> SQL NULL (a JSON `null` would be stored otherwise). */
+const json = (v: unknown) =>
+  v === undefined ? undefined : v === null ? Prisma.DbNull : (v as Prisma.InputJsonValue);
 
 @Injectable()
 export class AuditService {

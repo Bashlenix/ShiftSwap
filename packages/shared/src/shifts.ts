@@ -16,14 +16,22 @@ const shiftFields = {
 
 type TimeRange = { startAt?: string; endAt?: string };
 
+function rangeError(startAt: string, endAt: string, maxMs?: number): string | null {
+  const diff = Date.parse(endAt) - Date.parse(startAt);
+  if (diff <= 0) return 'End must be after start';
+  if (maxMs !== undefined && diff > maxMs) return 'A shift can be at most 16 hours';
+  return null;
+}
+
 function checkRange(v: TimeRange, ctx: z.RefinementCtx, maxMs?: number) {
   if (v.startAt === undefined || v.endAt === undefined) return;
-  const diff = Date.parse(v.endAt) - Date.parse(v.startAt);
-  if (diff <= 0) {
-    ctx.addIssue({ code: 'custom', path: ['endAt'], message: 'End must be after start' });
-  } else if (maxMs !== undefined && diff > maxMs) {
-    ctx.addIssue({ code: 'custom', path: ['endAt'], message: 'A shift can be at most 16 hours' });
-  }
+  const message = rangeError(v.startAt, v.endAt, maxMs);
+  if (message) ctx.addIssue({ code: 'custom', path: ['endAt'], message });
+}
+
+/** Same rule and messages as `createShiftSchema`, for already-merged values (PATCH). */
+export function shiftTimesError(startAt: string, endAt: string): string | null {
+  return rangeError(startAt, endAt, MAX_SHIFT_MS);
 }
 
 export const createShiftSchema = z
@@ -36,8 +44,8 @@ export const updateShiftSchema = z
     endAt: shiftFields.endAt.optional(),
     requiredSkillIds: z.array(z.uuid()).optional(),
     assignedMembershipId: z.uuid().nullable().optional(),
-    location: shiftFields.location,
-    notes: shiftFields.notes,
+    location: shiftFields.location.nullable().optional(),
+    notes: shiftFields.notes.nullable().optional(),
     version: z.number().int().min(1),
   })
   .superRefine((v, ctx) => checkRange(v, ctx, MAX_SHIFT_MS));

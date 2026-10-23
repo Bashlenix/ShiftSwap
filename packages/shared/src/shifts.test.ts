@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createShiftSchema, createUnavailabilitySchema, updateShiftSchema } from './shifts';
+import {
+  createShiftSchema,
+  createUnavailabilitySchema,
+  shiftTimesError,
+  updateShiftSchema,
+} from './shifts';
 
 const base = {
   startAt: '2026-11-02T08:00:00.000Z',
@@ -52,6 +57,29 @@ describe('updateShiftSchema', () => {
       endAt: '2026-11-02T07:00:00.000Z',
     });
     expect(r.success).toBe(false);
+  });
+});
+
+describe('updateShiftSchema nullable fields', () => {
+  it('accepts null to clear location and notes', () => {
+    const r = updateShiftSchema.safeParse({ version: 2, location: null, notes: null });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      expect(r.data.location).toBeNull();
+      expect(r.data.notes).toBeNull();
+    }
+  });
+});
+
+describe('shiftTimesError', () => {
+  it('returns the schema messages for merged values', () => {
+    expect(shiftTimesError('2026-11-02T08:00:00.000Z', '2026-11-02T08:00:00.000Z')).toBe(
+      'End must be after start',
+    );
+    expect(shiftTimesError('2026-11-02T08:00:00.000Z', '2026-11-03T01:00:00.000Z')).toBe(
+      'A shift can be at most 16 hours',
+    );
+    expect(shiftTimesError('2026-11-02T08:00:00.000Z', '2026-11-02T16:00:00.000Z')).toBeNull();
   });
 });
 
