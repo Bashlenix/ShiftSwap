@@ -10,12 +10,6 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - name: DEBUG build api
-        run: |
-          docker build -f apps/api/Dockerfile -t dbg-api . -q
-          docker run --rm --entrypoint sh dbg-api -c 'ls /app /app/node_modules | head -30; ls /app/node_modules/@nestjs; ls -la /app/apps/api'
-          docker build -f apps/api/Dockerfile --target build -t dbg-build . -q
-          docker run --rm --entrypoint sh dbg-build -c 'ls /app/node_modules | wc -l; ls /app/node_modules/@nestjs'
       - name: Start the stack
         run: docker compose up -d --build --wait
       - name: Smoke test
