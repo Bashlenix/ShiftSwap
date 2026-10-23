@@ -4,42 +4,44 @@ import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { DiscoveryService, MetadataScanner, ModulesContainer } from '@nestjs/core';
 import { api, createTestApp, makeMember, makeOrg, type TestCtx } from './helpers/test-app';
 
-type Actor = 'manager' | 'employee';
+type Actor = 'manager' | 'employee' | 'employee2';
 type Params = { orgId: string; shiftId: string; offerId: string; id: string };
+
+/** One concrete request; built fresh (own scratch entities) by each row's `setup`. */
+interface Req {
+  params: Params;
+  query?: string;
+  body?: object;
+}
 
 interface Variant {
   name: string;
-  actor: Actor;
-  params?: Partial<Params>;
-  query?: string;
-  body?: (f: Fixture) => object;
+  /** Swaps exactly one org-B id into the control request. */
+  mutate: (req: Req, f: Fixture) => Req;
 }
 
 interface Row {
   /** `METHOD path-template`, as registered by the controllers (without the global prefix). */
   route: string;
-  /** Rejected with 403 for an EMPLOYEE. */
+  /** Actor of the positive control. */
+  actor: Actor;
+  /** Exact status of the control request (own org, own valid ids). */
+  expected: number;
+  /** Rejected with 403 for an EMPLOYEE (MANAGER-only route). */
   managerOnly: boolean;
-  /** Valid request against org A's own entities. */
-  query?: string;
-  body?: (f: Fixture) => object;
-  /** Use the scratch offer for the EMPLOYEE reachability check (the route mutates). */
-  scratchOffer?: boolean;
-  /** Org A routes that receive org B entity ids (path or body): must answer 404. */
+  /** Builds a fresh, valid request against org A's own entities. */
+  setup: (f: Fixture) => Promise<Req>;
   foreign: Variant[];
 }
 
 interface Fixture {
   a: {
     orgId: string;
-    manager: string;
-    employee: string;
-    shiftId: string;
-    offerId: string;
-    scratchOfferId: string;
-    unavailId: string;
+    managerId: string;
+    employeeId: string;
+    employee2Id: string;
+    skillId: string;
     mgrUnavailId: string;
-    employeeMembershipId: string;
   };
   b: {
     orgId: string;
@@ -48,160 +50,293 @@ interface Fixture {
     acceptanceId: string;
     unavailId: string;
     skillId: string;
-    managerMembershipId: string;
-    employeeMembershipId: string;
+    employeeId: string;
   };
-  managerCookie: string;
-  employeeCookie: string;
+  cookies: Record<Actor, string>;
 }
 
 const day = 24 * 3600_000;
-const when = (days: number, hours = 8) => {
-  const start = new Date(Date.now() + days * day);
-  return { startAt: start, endAt: new Date(start.getTime() + hours * 3600_000) };
+let slotCounter = 0;
+/** Fresh, far-apart 8h slot so scratch shifts never collide on overlap/rest/weekly rules. */
+const nextSlot = () => {
+  const start = new Date(Date.now() + (100 + slotCounter++ * 9) * day);
+  return { startAt: start, endAt: new Date(start.getTime() + 8 * 3600_000) };
 };
-const iso = (d: Date) => d.toISOString();
-const RANGE = `from=${encodeURIComponent(iso(new Date(Date.now() - day)))}&to=${encodeURIComponent(iso(new Date(Date.now() + 10 * day)))}`;
-const slot = (days: number) => {
-  const w = when(days);
-  return { startAt: iso(w.startAt), endAt: iso(w.endAt) };
+const isoSlot = () => {
+  const s = nextSlot();
+  return { startAt: s.startAt.toISOString(), endAt: s.endAt.toISOString() };
 };
-
-const ROWS: Row[] = [
-  { route: 'GET orgs/:orgId/members', managerOnly: true, foreign: [] },
-  { route: 'GET orgs/:orgId/skills', managerOnly: false, foreign: [] },
-  {
-    route: 'GET orgs/:orgId/shifts',
-    managerOnly: true,
-    query: `?${RANGE}`,
-    foreign: [],
-  },
-  {
-    route: 'POST orgs/:orgId/shifts',
-    managerOnly: true,
-    body: () => ({ ...slot(30), assignedMembershipId: null, requiredSkillIds: [] }),
-    foreign: [
-      {
-        name: 'requiredSkillIds of org B',
-        actor: 'manager',
-        body: (f) => ({ ...slot(30), assignedMembershipId: null, requiredSkillIds: [f.b.skillId] }),
-      },
-      {
-        name: 'assignedMembershipId of org B',
-        actor: 'manager',
-        body: (f) => ({
-          ...slot(30),
-          assignedMembershipId: f.b.employeeMembershipId,
-          requiredSkillIds: [],
-        }),
-      },
-    ],
-  },
-  {
-    route: 'PATCH orgs/:orgId/shifts/:shiftId',
-    managerOnly: true,
-    body: () => ({ version: 1, location: 'x' }),
-    foreign: [
-      { name: 'shiftId of org B', actor: 'manager', params: { shiftId: 'B' } },
-      {
-        name: 'requiredSkillIds of org B',
-        actor: 'manager',
-        body: (f) => ({ version: 1, requiredSkillIds: [f.b.skillId] }),
-      },
-      {
-        name: 'assignedMembershipId of org B',
-        actor: 'manager',
-        body: (f) => ({ version: 1, assignedMembershipId: f.b.employeeMembershipId }),
-      },
-    ],
-  },
-  {
-    route: 'DELETE orgs/:orgId/shifts/:shiftId',
-    managerOnly: true,
-    query: '?version=1',
-    foreign: [{ name: 'shiftId of org B', actor: 'manager', params: { shiftId: 'B' } }],
-  },
-  { route: 'GET orgs/:orgId/me/unavailability', managerOnly: false, foreign: [] },
-  {
-    route: 'POST orgs/:orgId/me/unavailability',
-    managerOnly: false,
-    body: () => slot(40),
-    foreign: [],
-  },
-  {
-    route: 'DELETE orgs/:orgId/me/unavailability/:id',
-    managerOnly: false,
-    foreign: [
-      { name: 'unavailability id of org B', actor: 'employee', params: { id: 'B' } },
-      { name: 'unavailability id of a colleague', actor: 'employee', params: { id: 'MGR' } },
-    ],
-  },
-  {
-    route: 'POST orgs/:orgId/offers',
-    managerOnly: false,
-    body: (f) => ({ shiftId: f.a.shiftId, kind: 'GIVE_AWAY' }),
-    foreign: [
-      {
-        name: 'shiftId of org B',
-        actor: 'employee',
-        body: (f) => ({ shiftId: f.b.shiftId, kind: 'GIVE_AWAY' }),
-      },
-      {
-        name: 'shiftId of org B (open shift, manager)',
-        actor: 'manager',
-        body: (f) => ({ shiftId: f.b.shiftId, kind: 'OPEN_SHIFT' }),
-      },
-    ],
-  },
-  { route: 'GET orgs/:orgId/offers', managerOnly: false, query: '?scope=mine', foreign: [] },
-  {
-    route: 'GET orgs/:orgId/offers/:offerId',
-    managerOnly: false,
-    foreign: [{ name: 'offerId of org B', actor: 'manager', params: { offerId: 'B' } }],
-  },
-  {
-    route: 'POST orgs/:orgId/offers/:offerId/cancel',
-    managerOnly: false,
-    scratchOffer: true,
-    body: () => ({ version: 1 }),
-    foreign: [{ name: 'offerId of org B', actor: 'manager', params: { offerId: 'B' } }],
-  },
-  {
-    route: 'POST orgs/:orgId/offers/:offerId/acceptances',
-    managerOnly: false,
-    foreign: [{ name: 'offerId of org B', actor: 'employee', params: { offerId: 'B' } }],
-  },
-  {
-    route: 'DELETE orgs/:orgId/offers/:offerId/acceptances/me',
-    managerOnly: false,
-    foreign: [{ name: 'offerId of org B', actor: 'employee', params: { offerId: 'B' } }],
-  },
-  {
-    route: 'POST orgs/:orgId/offers/:offerId/claim',
-    managerOnly: false,
-    foreign: [{ name: 'offerId of org B', actor: 'employee', params: { offerId: 'B' } }],
-  },
-  {
-    route: 'POST orgs/:orgId/offers/:offerId/approve',
-    managerOnly: true,
-    body: (f) => ({ acceptanceId: f.b.acceptanceId, version: 1 }),
-    foreign: [
-      { name: 'offerId of org B', actor: 'manager', params: { offerId: 'B' } },
-      { name: 'acceptanceId of org B on own offer', actor: 'manager' },
-    ],
-  },
-  {
-    route: 'POST orgs/:orgId/offers/:offerId/reject',
-    managerOnly: true,
-    body: () => ({ version: 1 }),
-    foreign: [{ name: 'offerId of org B', actor: 'manager', params: { offerId: 'B' } }],
-  },
-];
+const RANGE = `?from=${encodeURIComponent(new Date(Date.now() - day).toISOString())}&to=${encodeURIComponent(new Date(Date.now() + 10 * day).toISOString())}`;
 
 describe('tenancy and permission sweep', () => {
   let ctx: TestCtx;
   let app: INestApplication;
   let f: Fixture;
+
+  const base = (): Params => ({ orgId: f.a.orgId, shiftId: '', offerId: '', id: '' });
+
+  const mkShift = (assignedMembershipId: string | null) =>
+    ctx.prisma.shift.create({
+      data: { organizationId: f.a.orgId, assignedMembershipId, ...nextSlot() },
+    });
+  const mkOffer = async (kind: 'GIVE_AWAY' | 'OPEN_SHIFT') => {
+    const owner = kind === 'GIVE_AWAY' ? f.a.employeeId : null;
+    const shift = await mkShift(owner);
+    const offer = await ctx.prisma.offer.create({
+      data: {
+        organizationId: f.a.orgId,
+        shiftId: shift.id,
+        kind,
+        originalOwnerMembershipId: owner,
+        createdByMembershipId: f.a.managerId,
+        expiresAt: new Date(shift.startAt.getTime() - 2 * 3600_000),
+      },
+    });
+    return { shiftId: shift.id, offerId: offer.id };
+  };
+  const mkPending = (offerId: string, membershipId: string) =>
+    ctx.prisma.acceptance.create({
+      data: { organizationId: f.a.orgId, offerId, membershipId, status: 'PENDING' },
+    });
+  const offerReq = async (
+    body?: (offerId: string) => object,
+    kind: 'GIVE_AWAY' | 'OPEN_SHIFT' = 'GIVE_AWAY',
+  ) => {
+    const { offerId } = await mkOffer(kind);
+    return { params: { ...base(), offerId }, body: body?.(offerId) } satisfies Req;
+  };
+  const swap = (fn: (req: Req, f: Fixture) => Req): Variant['mutate'] => fn;
+  const offerB: Variant = {
+    name: 'offerId of org B',
+    mutate: swap((r, fx) => ({ ...r, params: { ...r.params, offerId: fx.b.offerId } })),
+  };
+  const shiftB: Variant = {
+    name: 'shiftId of org B',
+    mutate: swap((r, fx) => ({ ...r, params: { ...r.params, shiftId: fx.b.shiftId } })),
+  };
+
+  const ROWS: Row[] = [
+    {
+      route: 'GET orgs/:orgId/members',
+      actor: 'manager',
+      expected: 200,
+      managerOnly: true,
+      setup: async () => ({ params: base() }),
+      foreign: [],
+    },
+    {
+      route: 'GET orgs/:orgId/skills',
+      actor: 'employee',
+      expected: 200,
+      managerOnly: false,
+      setup: async () => ({ params: base() }),
+      foreign: [],
+    },
+    {
+      route: 'GET orgs/:orgId/shifts',
+      actor: 'manager',
+      expected: 200,
+      managerOnly: true,
+      setup: async () => ({ params: base(), query: RANGE }),
+      foreign: [],
+    },
+    {
+      route: 'POST orgs/:orgId/shifts',
+      actor: 'manager',
+      expected: 201,
+      managerOnly: true,
+      setup: async (fx) => ({
+        params: base(),
+        body: {
+          ...isoSlot(),
+          requiredSkillIds: [fx.a.skillId],
+          assignedMembershipId: fx.a.employee2Id,
+        },
+      }),
+      foreign: [
+        {
+          name: 'requiredSkillIds of org B',
+          mutate: (r, fx) => ({ ...r, body: { ...r.body, requiredSkillIds: [fx.b.skillId] } }),
+        },
+        {
+          name: 'assignedMembershipId of org B',
+          mutate: (r, fx) => ({ ...r, body: { ...r.body, assignedMembershipId: fx.b.employeeId } }),
+        },
+      ],
+    },
+    {
+      route: 'PATCH orgs/:orgId/shifts/:shiftId',
+      actor: 'manager',
+      expected: 200,
+      managerOnly: true,
+      setup: async (fx) => ({
+        params: { ...base(), shiftId: (await mkShift(null)).id },
+        body: {
+          version: 1,
+          requiredSkillIds: [fx.a.skillId],
+          assignedMembershipId: fx.a.employee2Id,
+        },
+      }),
+      foreign: [
+        shiftB,
+        {
+          name: 'requiredSkillIds of org B',
+          mutate: (r, fx) => ({ ...r, body: { ...r.body, requiredSkillIds: [fx.b.skillId] } }),
+        },
+        {
+          name: 'assignedMembershipId of org B',
+          mutate: (r, fx) => ({ ...r, body: { ...r.body, assignedMembershipId: fx.b.employeeId } }),
+        },
+      ],
+    },
+    {
+      route: 'DELETE orgs/:orgId/shifts/:shiftId',
+      actor: 'manager',
+      expected: 204,
+      managerOnly: true,
+      setup: async () => ({
+        params: { ...base(), shiftId: (await mkShift(null)).id },
+        query: '?version=1',
+      }),
+      foreign: [shiftB],
+    },
+    {
+      route: 'GET orgs/:orgId/me/unavailability',
+      actor: 'employee',
+      expected: 200,
+      managerOnly: false,
+      setup: async () => ({ params: base() }),
+      foreign: [],
+    },
+    {
+      route: 'POST orgs/:orgId/me/unavailability',
+      actor: 'employee',
+      expected: 201,
+      managerOnly: false,
+      setup: async () => ({ params: base(), body: isoSlot() }),
+      foreign: [],
+    },
+    {
+      route: 'DELETE orgs/:orgId/me/unavailability/:id',
+      actor: 'employee',
+      expected: 204,
+      managerOnly: false,
+      setup: async (fx) => ({
+        params: {
+          ...base(),
+          id: (
+            await ctx.prisma.unavailability.create({
+              data: { organizationId: fx.a.orgId, membershipId: fx.a.employeeId, ...nextSlot() },
+            })
+          ).id,
+        },
+      }),
+      foreign: [
+        {
+          name: 'unavailability id of org B',
+          mutate: (r, fx) => ({ ...r, params: { ...r.params, id: fx.b.unavailId } }),
+        },
+        {
+          name: 'unavailability id of a colleague',
+          mutate: (r, fx) => ({ ...r, params: { ...r.params, id: fx.a.mgrUnavailId } }),
+        },
+      ],
+    },
+    {
+      route: 'POST orgs/:orgId/offers',
+      actor: 'employee',
+      expected: 201,
+      managerOnly: false,
+      setup: async (fx) => ({
+        params: base(),
+        body: { shiftId: (await mkShift(fx.a.employeeId)).id, kind: 'GIVE_AWAY' },
+      }),
+      foreign: [
+        {
+          name: 'shiftId of org B',
+          mutate: (r, fx) => ({ ...r, body: { ...r.body, shiftId: fx.b.shiftId } }),
+        },
+      ],
+    },
+    {
+      route: 'GET orgs/:orgId/offers',
+      actor: 'employee',
+      expected: 200,
+      managerOnly: false,
+      setup: async () => ({ params: base(), query: '?scope=mine' }),
+      foreign: [],
+    },
+    {
+      route: 'GET orgs/:orgId/offers/:offerId',
+      actor: 'manager',
+      expected: 200,
+      managerOnly: false,
+      setup: () => offerReq(),
+      foreign: [offerB],
+    },
+    {
+      route: 'POST orgs/:orgId/offers/:offerId/cancel',
+      actor: 'employee',
+      expected: 200,
+      managerOnly: false,
+      setup: () => offerReq(() => ({ version: 1 })),
+      foreign: [offerB],
+    },
+    {
+      route: 'POST orgs/:orgId/offers/:offerId/acceptances',
+      actor: 'employee2',
+      expected: 201,
+      managerOnly: false,
+      setup: () => offerReq(),
+      foreign: [offerB],
+    },
+    {
+      route: 'DELETE orgs/:orgId/offers/:offerId/acceptances/me',
+      actor: 'employee2',
+      expected: 204,
+      managerOnly: false,
+      setup: async (fx) => {
+        const req = await offerReq();
+        await mkPending(req.params.offerId, fx.a.employee2Id);
+        return req;
+      },
+      foreign: [offerB],
+    },
+    {
+      route: 'POST orgs/:orgId/offers/:offerId/claim',
+      actor: 'employee2',
+      expected: 200,
+      managerOnly: false,
+      setup: () => offerReq(undefined, 'OPEN_SHIFT'),
+      foreign: [offerB],
+    },
+    {
+      route: 'POST orgs/:orgId/offers/:offerId/approve',
+      actor: 'manager',
+      expected: 200,
+      managerOnly: true,
+      setup: async (fx) => {
+        const req = await offerReq();
+        const acc = await mkPending(req.params.offerId, fx.a.employee2Id);
+        return { ...req, body: { acceptanceId: acc.id, version: 1 } };
+      },
+      foreign: [
+        offerB,
+        {
+          name: 'acceptanceId of org B on own offer',
+          mutate: (r, fx) => ({ ...r, body: { ...r.body, acceptanceId: fx.b.acceptanceId } }),
+        },
+      ],
+    },
+    {
+      route: 'POST orgs/:orgId/offers/:offerId/reject',
+      actor: 'manager',
+      expected: 200,
+      managerOnly: true,
+      setup: () => offerReq(() => ({ version: 1 })),
+      foreign: [offerB],
+    },
+  ];
 
   beforeAll(async () => {
     ctx = await createTestApp();
@@ -211,115 +346,84 @@ describe('tenancy and permission sweep', () => {
     const orgB = await makeOrg(prisma);
     const aMgr = await makeMember(ctx, orgA.orgId, { accessLevel: 'MANAGER' });
     const aEmp = await makeMember(ctx, orgA.orgId, { accessLevel: 'EMPLOYEE' });
+    const aEmp2 = await makeMember(ctx, orgA.orgId, { accessLevel: 'EMPLOYEE' });
     const bMgr = await makeMember(ctx, orgB.orgId, { accessLevel: 'MANAGER' });
     const bEmp = await makeMember(ctx, orgB.orgId, {
       accessLevel: 'EMPLOYEE',
       skillNames: ['Kitchen'],
     });
-    const skill = await prisma.skill.findFirstOrThrow({ where: { organizationId: orgB.orgId } });
+    const bSkill = await prisma.skill.findFirstOrThrow({ where: { organizationId: orgB.orgId } });
+    const aSkill = await prisma.skill.create({
+      data: { organizationId: orgA.orgId, name: 'Bar' },
+    });
 
-    const mkOffer = async (orgId: string, owner: string) => {
-      const w = when(20);
-      const shift = await prisma.shift.create({
-        data: { organizationId: orgId, assignedMembershipId: owner, ...w },
-      });
-      const offer = await prisma.offer.create({
-        data: {
-          organizationId: orgId,
-          shiftId: shift.id,
-          kind: 'GIVE_AWAY',
-          originalOwnerMembershipId: owner,
-          createdByMembershipId: owner,
-          expiresAt: new Date(w.startAt.getTime() - 2 * 3600_000),
-        },
-      });
-      return { shiftId: shift.id, offerId: offer.id };
-    };
-    const a = await mkOffer(orgA.orgId, aEmp.membershipId);
-    const scratch = await mkOffer(orgA.orgId, aEmp.membershipId);
-    const b = await mkOffer(orgB.orgId, bEmp.membershipId);
-    const acc = await prisma.acceptance.create({
+    const bShift = await prisma.shift.create({
+      data: { organizationId: orgB.orgId, assignedMembershipId: bEmp.membershipId, ...nextSlot() },
+    });
+    const bOffer = await prisma.offer.create({
       data: {
         organizationId: orgB.orgId,
-        offerId: b.offerId,
+        shiftId: bShift.id,
+        kind: 'GIVE_AWAY',
+        originalOwnerMembershipId: bEmp.membershipId,
+        createdByMembershipId: bEmp.membershipId,
+        expiresAt: new Date(bShift.startAt.getTime() - 2 * 3600_000),
+      },
+    });
+    const bAcc = await prisma.acceptance.create({
+      data: {
+        organizationId: orgB.orgId,
+        offerId: bOffer.id,
         membershipId: bMgr.membershipId,
         status: 'PENDING',
       },
     });
-    const w = when(50, 1);
     const un = (orgId: string, membershipId: string) =>
-      prisma.unavailability.create({ data: { organizationId: orgId, membershipId, ...w } });
+      prisma.unavailability.create({
+        data: { organizationId: orgId, membershipId, ...nextSlot() },
+      });
 
     f = {
       a: {
         orgId: orgA.orgId,
-        manager: aMgr.membershipId,
-        employee: aEmp.membershipId,
-        employeeMembershipId: aEmp.membershipId,
-        ...a,
-        scratchOfferId: scratch.offerId,
-        unavailId: (await un(orgA.orgId, aEmp.membershipId)).id,
+        managerId: aMgr.membershipId,
+        employeeId: aEmp.membershipId,
+        employee2Id: aEmp2.membershipId,
+        skillId: aSkill.id,
         mgrUnavailId: (await un(orgA.orgId, aMgr.membershipId)).id,
       },
       b: {
         orgId: orgB.orgId,
-        ...b,
-        acceptanceId: acc.id,
+        shiftId: bShift.id,
+        offerId: bOffer.id,
+        acceptanceId: bAcc.id,
         unavailId: (await un(orgB.orgId, bEmp.membershipId)).id,
-        skillId: skill.id,
-        managerMembershipId: bMgr.membershipId,
-        employeeMembershipId: bEmp.membershipId,
+        skillId: bSkill.id,
+        employeeId: bEmp.membershipId,
       },
-      managerCookie: aMgr.cookie!,
-      employeeCookie: aEmp.cookie!,
+      cookies: { manager: aMgr.cookie!, employee: aEmp.cookie!, employee2: aEmp2.cookie! },
     };
   });
   afterAll(async () => {
     await app?.close();
   });
 
-  const resolve = (template: string, o: Partial<Params> = {}) => {
-    const p: Params = {
-      orgId: f.a.orgId,
-      shiftId: f.a.shiftId,
-      offerId: f.a.offerId,
-      id: f.a.unavailId,
-      ...o,
-    };
-    const real = (key: keyof Params) => {
-      const v = p[key];
-      if (v !== 'B' && v !== 'MGR') return v;
-      if (v === 'MGR') return f.a.mgrUnavailId;
-      return { orgId: f.b.orgId, shiftId: f.b.shiftId, offerId: f.b.offerId, id: f.b.unavailId }[
-        key
-      ];
-    };
-    return `/api/v1/${template
-      .replace(':orgId', real('orgId'))
-      .replace(':shiftId', real('shiftId'))
-      .replace(':offerId', real('offerId'))
-      .replace(':id', real('id'))}`;
-  };
-
-  const send = (
-    row: Row,
-    cookie: string | undefined,
-    path: string,
-    query: string | undefined,
-    body: object | undefined,
-  ) => {
-    const [method] = row.route.split(' ');
+  const send = (row: Row, cookie: string | undefined, req: Req) => {
+    const [method, template] = row.route.split(' ');
+    const path = template
+      .replace(':orgId', req.params.orgId)
+      .replace(':shiftId', req.params.shiftId)
+      .replace(':offerId', req.params.offerId)
+      .replace(':id', req.params.id);
     const client = api(app, cookie);
-    const url = path + (query ?? '');
-    const req = {
+    const call = {
       GET: client.get,
       POST: client.post,
       PATCH: client.patch,
       DELETE: client.delete,
-    }[method]!(url);
-    return body === undefined ? req : req.send(body);
+    }[method]!(`/api/v1/${path}${req.query ?? ''}`);
+    return req.body === undefined ? call : call.send(req.body);
   };
-  const cookieOf = (actor: Actor) => (actor === 'manager' ? f.managerCookie : f.employeeCookie);
 
   it('covers exactly the registered org-scoped routes', () => {
     const discovery = new DiscoveryService(app.get(ModulesContainer));
@@ -332,77 +436,62 @@ describe('tenancy and permission sweep', () => {
       [RequestMethod.DELETE]: 'DELETE',
     };
     const first = (v: unknown): string => (Array.isArray(v) ? (v[0] as string) : (v as string));
-    const found = new Set<string>();
+    const all = new Set<string>();
     for (const wrapper of discovery.getControllers()) {
       const { instance } = wrapper;
       if (!instance) continue;
       const proto = Object.getPrototypeOf(instance) as object;
-      const base = first(Reflect.getMetadata(PATH_METADATA, instance.constructor)) ?? '';
+      const prefix = first(Reflect.getMetadata(PATH_METADATA, instance.constructor)) ?? '';
       for (const name of scanner.getAllMethodNames(proto)) {
         const handler = (proto as Record<string, unknown>)[name] as object;
         const method = Reflect.getMetadata(METHOD_METADATA, handler) as number | undefined;
         if (method === undefined) continue;
         const sub = first(Reflect.getMetadata(PATH_METADATA, handler)) ?? '/';
-        const path = [base, sub === '/' ? '' : sub]
+        const path = [prefix, sub === '/' ? '' : sub]
           .filter(Boolean)
           .join('/')
           .replace(/\/+/g, '/')
           .replace(/^\//, '');
-        if (path.startsWith('orgs/:orgId')) found.add(`${names[method] ?? method} ${path}`);
+        all.add(`${names[method] ?? method} ${path}`);
       }
     }
-    expect([...found].sort()).toEqual(ROWS.map((r) => r.route).sort());
+    const isPublic = (route: string) => /^[A-Z]+ (me|health)(\/|$)/.test(route);
+    const protectedRoutes = [...all].filter((r) => !isPublic(r));
+    // Any other route must live under orgs/:orgId, so a renamed param cannot escape the sweep.
+    expect(protectedRoutes.filter((r) => !/^[A-Z]+ orgs\/:orgId(\/|$)/.test(r))).toEqual([]);
+    expect(protectedRoutes.sort()).toEqual(ROWS.map((r) => r.route).sort());
   });
 
   describe.each(ROWS.map((r) => [r.route, r] as const))('%s', (_route, row) => {
-    const template = row.route.split(' ')[1];
-    const own = (actor: Actor) => {
-      const body = row.body?.(f);
-      return send(row, cookieOf(actor), resolve(template), row.query, body);
-    };
-
-    it('401 without a session cookie', async () => {
-      const res = await send(row, undefined, resolve(template), row.query, row.body?.(f));
-      expect(res.status).toBe(401);
+    it('control: own-org ids succeed with the exact expected status', async () => {
+      const res = await send(row, f.cookies[row.actor], await row.setup(f));
+      expect(res.status).toBe(row.expected);
     });
 
-    it("404 for another org's orgId", async () => {
-      const res = await send(
-        row,
-        f.managerCookie,
-        resolve(template, { orgId: 'B', shiftId: 'B', offerId: 'B', id: 'B' }),
-        row.query,
-        row.body?.(f),
-      );
+    it('401 without a session cookie', async () => {
+      expect((await send(row, undefined, await row.setup(f))).status).toBe(401);
+    });
+
+    it("404 for another org's orgId (only orgId swapped)", async () => {
+      const req = await row.setup(f);
+      const res = await send(row, f.cookies[row.actor], {
+        ...req,
+        params: { ...req.params, orgId: f.b.orgId },
+      });
       expect(res.status).toBe(404);
     });
 
     if (row.managerOnly) {
-      it('403 for an EMPLOYEE', async () => {
-        expect((await own('employee')).status).toBe(403);
-      });
-    } else {
-      it('is reachable for an EMPLOYEE (not 401/403)', async () => {
-        const res = await send(
-          row,
-          f.employeeCookie,
-          resolve(template, row.scratchOffer ? { offerId: f.a.scratchOfferId } : {}),
-          row.query,
-          row.body?.(f),
-        );
-        expect([401, 403]).not.toContain(res.status);
+      it('403 for an EMPLOYEE on a MANAGER route', async () => {
+        expect((await send(row, f.cookies.employee, await row.setup(f))).status).toBe(403);
       });
     }
 
     for (const v of row.foreign) {
-      it(`404 for ${v.name}`, async () => {
-        const res = await send(
-          row,
-          cookieOf(v.actor),
-          resolve(template, v.params),
-          v.query ?? row.query,
-          (v.body ?? row.body)?.(f),
-        );
+      it(`404 NOT_FOUND for ${v.name} (paired control succeeds)`, async () => {
+        const control = await send(row, f.cookies[row.actor], await row.setup(f));
+        expect(control.status).toBe(row.expected);
+        const res = await send(row, f.cookies[row.actor], v.mutate(await row.setup(f), f));
         expect(res.status).toBe(404);
         expect(res.body.error.code).toBe('NOT_FOUND');
       });
