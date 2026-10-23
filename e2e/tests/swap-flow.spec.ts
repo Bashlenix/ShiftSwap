@@ -55,7 +55,11 @@ test('Anna claims the open Barista shift', async ({ page }) => {
 
   await openPage(page, 'My shifts', 'My shifts');
   // Anna already had the 07:00–13:00 Barista shift the day before; now there are two.
-  await expect(page.getByRole('rowheader', { name: new RegExp(BARISTA_TIME) })).toHaveCount(2);
+  await expect(
+    page
+      .getByRole('table', { name: 'Your shifts in the next 14 days' })
+      .getByRole('rowheader', { name: new RegExp(BARISTA_TIME) }),
+  ).toHaveCount(2);
 });
 
 test('main screens have no serious or critical axe violations', async ({ page }) => {
