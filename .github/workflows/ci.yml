@@ -22,3 +22,26 @@ jobs:
       - name: Stop the stack
         if: always()
         run: docker compose down -v
+
+  zero-setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE_PROJECT_NAME: shiftswap-devcontainer
+      COMPOSE_FILES: -f docker-compose.yml -f .devcontainer/docker-compose.devcontainer.yml
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the dev container (same path as a Codespace)
+        run: npx --yes @devcontainers/cli up --workspace-folder .
+      - name: Wait for the login page
+        run: npx --yes wait-on -t 300000 http-get://localhost:5173/login
+      - name: Smoke test
+        run: scripts/smoke-stack.sh
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          docker ps -a
+          docker compose $COMPOSE_FILES logs
+      - name: Stop the stack
+        if: always()
+        run: docker compose $COMPOSE_FILES down -v
