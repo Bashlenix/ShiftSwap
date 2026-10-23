@@ -10,6 +10,8 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - name: Smoke-check helpers self-test
+        run: scripts/test-smoke-checks.sh
       - name: Start the stack
         run: docker compose up -d --build --wait
       - name: Smoke test

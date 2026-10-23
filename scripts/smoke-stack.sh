@@ -19,23 +19,33 @@ sign_in() {
     -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" "$BASE/api/auth/sign-in/email"
 }
 
-[ "$(code "$BASE/login")" = "200" ] && pass "GET /login -> 200" || fail "GET /login"
+# True (exit 0) when the text contains any demo account email (all use @shiftswap.test).
+logs_leak_emails() { grep -qiE 'shiftswap\.test' <<<"$1"; }
 
-[ "$(sign_in)" = "200" ] && pass "sign-in -> 200" || fail "sign-in"
+main() {
+  [ "$(code "$BASE/login")" = "200" ] && pass "GET /login -> 200" || fail "GET /login"
 
-curl -s -b "$JAR" "$BASE/api/v1/me" | grep -q 'Café Lindenhof' \
-  && pass "/api/v1/me lists Café Lindenhof" || fail "/api/v1/me missing Café Lindenhof"
+  [ "$(sign_in)" = "200" ] && pass "sign-in -> 200" || fail "sign-in"
 
-echo "Restarting api..."
-docker compose restart api
-docker compose up -d --wait
-echo "Waiting 12s so the sign-in rate limit window resets..."
-sleep 12
+  me="$(curl -s -b "$JAR" "$BASE/api/v1/me")"
+  grep -q 'Café Lindenhof' <<<"$me" \
+    && pass "/api/v1/me lists Café Lindenhof" || fail "/api/v1/me missing Café Lindenhof"
 
-[ "$(sign_in)" = "200" ] && pass "sign-in after api restart -> 200" || fail "sign-in after restart"
+  echo "Restarting api..."
+  docker compose restart api
+  docker compose up -d --wait
+  echo "Waiting 12s so the sign-in rate limit window resets..."
+  sleep 12
 
-if docker compose logs api 2>&1 | grep -qiE 'anna@|ben@|shiftswap\.test'; then
-  fail "api logs contain demo emails"
-fi
-pass "api logs contain no demo emails"
-echo "ALL CHECKS PASSED"
+  [ "$(sign_in)" = "200" ] && pass "sign-in after api restart -> 200" || fail "sign-in after restart"
+
+  # Capture first: `cmd | grep -q` under pipefail can report the wrong result (SIGPIPE).
+  api_logs="$(docker compose logs api 2>&1)"
+  if logs_leak_emails "$api_logs"; then
+    fail "api logs contain demo emails"
+  fi
+  pass "api logs contain no demo emails"
+  echo "ALL CHECKS PASSED"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main; fi
