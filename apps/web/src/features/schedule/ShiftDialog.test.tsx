@@ -1,6 +1,7 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ShiftDto } from '@shiftswap/shared';
 import { ApiError } from '../../lib/api';
 import { MANAGER_ORG, renderWithOrg } from '../../test-utils';
 import { ShiftDialog } from './ShiftDialog';
@@ -25,7 +26,7 @@ const members = [
   },
 ];
 const skills = [{ id: 'sk1', name: 'Barista' }];
-const stored = {
+const stored: ShiftDto = {
   id: 's1',
   startAt: '2026-11-03T08:00:00Z',
   endAt: '2026-11-03T12:00:00Z',
@@ -37,7 +38,7 @@ const stored = {
   openOfferId: null,
 };
 
-function open(shift: typeof stored | null = null) {
+function open(shift: ShiftDto | null = null) {
   const onClose = vi.fn();
   renderWithOrg(
     <ShiftDialog
@@ -142,35 +143,79 @@ describe('ShiftDialog', () => {
     expect(screen.queryByRole('checkbox', { name: 'Post as open shift' })).toBeNull();
   });
 
-  it('edits with PATCH and the version, clearing empty location/notes with null', async () => {
+  it('edits notes only: PATCH carries just notes and version', async () => {
     apiSend.mockResolvedValue({ shift: stored, warnings: [] });
     open(stored);
     expect(screen.getByLabelText('Start')).toHaveValue('09:00');
     expect(screen.getByLabelText('End')).toHaveValue('13:00');
     expect(screen.queryByRole('checkbox', { name: 'Post as open shift' })).toBeNull();
-    await userEvent.clear(screen.getByLabelText('Location'));
+    await userEvent.type(screen.getByLabelText('Notes'), 'Bring keys');
     await userEvent.click(screen.getByRole('button', { name: 'Save shift' }));
     await waitFor(() =>
       expect(apiSend).toHaveBeenCalledWith('PATCH', '/api/v1/orgs/org-1/shifts/s1', {
-        startAt: '2026-11-03T08:00:00.000Z',
-        endAt: '2026-11-03T12:00:00.000Z',
-        requiredSkillIds: ['sk1'],
-        assignedMembershipId: 'm1',
-        location: null,
-        notes: null,
+        notes: 'Bring keys',
         version: 3,
       }),
     );
   });
 
-  it('deletes with the version', async () => {
+  it('sends startAt only when only the start changed, and null to clear location', async () => {
+    apiSend.mockResolvedValue({ shift: stored, warnings: [] });
+    open(stored);
+    await userEvent.clear(screen.getByLabelText('Start'));
+    await userEvent.type(screen.getByLabelText('Start'), '08:00');
+    await userEvent.clear(screen.getByLabelText('Location'));
+    await userEvent.click(screen.getByRole('button', { name: 'Save shift' }));
+    await waitFor(() =>
+      expect(apiSend).toHaveBeenCalledWith('PATCH', '/api/v1/orgs/org-1/shifts/s1', {
+        startAt: '2026-11-03T07:00:00.000Z',
+        location: null,
+        version: 3,
+      }),
+    );
+  });
+
+  it('asks for confirmation before deleting, and Keep shift backs out', async () => {
     apiSend.mockResolvedValue(undefined);
     const onClose = open(stored);
     await userEvent.click(screen.getByRole('button', { name: 'Delete shift' }));
+    expect(screen.getByText('Delete this shift?')).toBeVisible();
+    expect(apiSend).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Keep shift' }));
+    expect(screen.getByRole('button', { name: 'Save shift' })).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: 'Delete shift' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Yes, delete' }));
     await waitFor(() =>
       expect(apiSend).toHaveBeenCalledWith('DELETE', '/api/v1/orgs/org-1/shifts/s1?version=3'),
     );
     await waitFor(() => expect(onClose).toHaveBeenCalledWith({ notice: 'Shift deleted.' }));
+  });
+
+  it('offers posting an unassigned, not-yet-offered shift when editing; failure keeps the shift', async () => {
+    const unassigned = { ...stored, assignedMembershipId: null };
+    apiSend.mockImplementation((method: string, path: string) =>
+      path.endsWith('/offers')
+        ? Promise.reject(new ApiError(409, { error: { code: 'OFFER_EXPIRED', message: 'x' } }))
+        : Promise.resolve({ shift: unassigned, warnings: [] }),
+    );
+    const onClose = open(unassigned);
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Post as open shift' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save shift' }));
+    const msg =
+      "Shift saved, but it couldn't be posted as an open shift: This offer has expired. Open the shift to try again.";
+    expect(await screen.findByText(msg)).toBeVisible();
+    expect(apiSend).toHaveBeenCalledWith('POST', '/api/v1/orgs/org-1/offers', {
+      shiftId: 's1',
+      kind: 'OPEN_SHIFT',
+    });
+    expect(apiSend).not.toHaveBeenCalledWith('PATCH', expect.anything(), expect.anything());
+    await userEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(onClose).toHaveBeenCalledWith({ notice: msg });
+  });
+
+  it('does not offer posting when the shift already has an open offer', () => {
+    open({ ...stored, assignedMembershipId: null, openOfferId: 'o1' });
+    expect(screen.queryByRole('checkbox', { name: 'Post as open shift' })).toBeNull();
   });
 
   it('closes with the conflict message on VERSION_CONFLICT', async () => {
@@ -178,6 +223,7 @@ describe('ShiftDialog', () => {
       new ApiError(409, { error: { code: 'VERSION_CONFLICT', message: 'x' } }),
     );
     const onClose = open(stored);
+    await userEvent.type(screen.getByLabelText('Notes'), 'x');
     await userEvent.click(screen.getByRole('button', { name: 'Save shift' }));
     await waitFor(() =>
       expect(onClose).toHaveBeenCalledWith({

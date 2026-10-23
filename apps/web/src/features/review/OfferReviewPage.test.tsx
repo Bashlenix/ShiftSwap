@@ -189,4 +189,35 @@ describe('OfferReviewPage', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Approve Lukas Wolf' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Overlaps another shift');
   });
+
+  it('focuses the detail heading and clears the notice when switching offers', async () => {
+    const second = {
+      ...summary,
+      id: 'o2',
+      shift: { ...shift, id: 's2', startAt: '2026-11-11T08:00:00Z', endAt: '2026-11-11T12:00:00Z' },
+    };
+    apiFetch.mockImplementation((path: string) => {
+      if (path.includes('/offers?scope=review')) return Promise.resolve([summary, second]);
+      if (path.endsWith('/offers/o1'))
+        return Promise.resolve(detail([acceptance('a1', 'Lukas Wolf')]));
+      if (path.endsWith('/offers/o2'))
+        return Promise.resolve({ ...second, acceptances: [acceptance('a9', 'Mia Roth')] });
+      return Promise.resolve([]);
+    });
+    apiSend.mockResolvedValue({});
+    renderWithOrg(
+      <Routes>
+        <Route path="/orgs/:orgId/review/:offerId" element={<OfferReviewPage />} />
+      </Routes>,
+      MANAGER_ORG,
+      '/orgs/org-1/review/o1',
+    );
+    const heading = await screen.findByRole('heading', { level: 2 });
+    await waitFor(() => expect(heading).toHaveFocus());
+    await userEvent.click(await screen.findByRole('button', { name: 'Approve Lukas Wolf' }));
+    expect(await screen.findByText('Approved Lukas Wolf.')).toBeVisible();
+    await userEvent.click(screen.getByRole('link', { name: 'Review Wed 11 Nov, 09:00–13:00' }));
+    expect(await screen.findByRole('button', { name: 'Approve Mia Roth' })).toBeVisible();
+    expect(screen.queryByText('Approved Lukas Wolf.')).toBeNull();
+  });
 });

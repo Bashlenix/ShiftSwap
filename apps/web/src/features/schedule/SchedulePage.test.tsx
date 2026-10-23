@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MANAGER_ORG, renderWithOrg, TEST_ORG } from '../../test-utils';
@@ -135,5 +135,33 @@ describe('SchedulePage', () => {
     await userEvent.keyboard('{Escape}');
     await userEvent.click(await screen.findByRole('button', { name: /09:00–13:00/ }));
     expect(await screen.findByRole('dialog', { name: 'Edit shift' })).toBeVisible();
+  });
+
+  it('falls back to the current week for an invalid ?week=', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-04T10:00:00Z'));
+    try {
+      setup([]);
+      renderWithOrg(<SchedulePage />, MANAGER_ORG, '/schedule?week=banana');
+      expect(await screen.findByRole('link', { name: 'Next week' })).toHaveAttribute(
+        'href',
+        '/schedule?week=2026-W46',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('shows the notice in the page Feedback after a save', async () => {
+    setup([]);
+    apiSend.mockResolvedValue({
+      shift: shift('n1', '2026-11-03T08:00:00Z', '2026-11-03T12:00:00Z'),
+      warnings: [],
+    });
+    renderWithOrg(<SchedulePage />, MANAGER_ORG, '/schedule?week=2026-W45');
+    await userEvent.click(await screen.findByRole('button', { name: 'New shift' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Save shift' }));
+    expect(await screen.findByText('Shift saved.')).toBeVisible();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });

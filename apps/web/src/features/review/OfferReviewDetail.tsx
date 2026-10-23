@@ -29,6 +29,12 @@ export function OfferReviewDetail({ offerId }: { offerId: string }) {
     }
   }, [error, notice]);
 
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const loaded = offer.isSuccess;
+  useEffect(() => {
+    if (loaded) headingRef.current?.focus();
+  }, [loaded]);
+
   if (offer.isPending) return <p>Loading…</p>;
   if (offer.isError) return <p role="alert">Could not load this offer. Please try again.</p>;
 
@@ -41,7 +47,12 @@ export function OfferReviewDetail({ offerId }: { offerId: string }) {
 
   return (
     <section aria-labelledby="review-detail-heading" className="flex flex-col gap-4">
-      <h2 id="review-detail-heading" className="text-xl font-semibold">
+      <h2
+        id="review-detail-heading"
+        ref={headingRef}
+        tabIndex={-1}
+        className="text-xl font-semibold outline-none"
+      >
         {formatShiftTime(o.shift.startAt, o.shift.endAt, org.timezone)}
       </h2>
       <p className="flex flex-wrap items-center gap-2 text-sm">

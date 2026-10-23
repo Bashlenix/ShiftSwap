@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   RULE_LABELS,
   type MemberDto,
+  type RuleCode,
   type ShiftDto,
   type ShiftWriteResponse,
   type SkillDto,
@@ -94,6 +95,8 @@ function ShiftForm({
   // stays open showing it, and hands it to the page when it closes.
   const [done, setDone] = useState<string | null>(null);
 
+  const canPostOpen = !shift || shift.openOfferId === null;
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const endsNextDay = end !== '' && start !== '' && end <= start;
 
   const refresh = () =>
@@ -130,19 +133,37 @@ function ShiftForm({
     const endAt = localToInstant(`${endsNextDay ? addDays(date, 1) : date}T${end}`, org.timezone);
     const assignedMembershipId = assignee === '' ? null : assignee;
     void run(async () => {
-      let saved: ShiftWriteResponse;
+      let shiftId: string;
+      let warnings: RuleCode[] = [];
       if (shift) {
-        saved = await apiSend<ShiftWriteResponse>('PATCH', orgApi(org, `/shifts/${shift.id}`), {
-          startAt,
-          endAt,
-          requiredSkillIds: skillIds,
-          assignedMembershipId,
-          location: location.trim() === '' ? null : location.trim(),
-          notes: notes.trim() === '' ? null : notes.trim(),
-          version: shift.version,
-        });
+        // Only send what the manager changed: rebuilding the times from wall-clock
+        // strings can move them (DST fall-back hour, seconds), which the API treats
+        // as a time change.
+        const patch: Record<string, unknown> = {};
+        const timesChanged =
+          date !== initial!.start.date ||
+          start !== initial!.start.time ||
+          end !== initial!.end.time;
+        if (timesChanged) {
+          if (Date.parse(startAt) !== Date.parse(shift.startAt)) patch.startAt = startAt;
+          if (Date.parse(endAt) !== Date.parse(shift.endAt)) patch.endAt = endAt;
+        }
+        if (!sameSet(skillIds, shift.requiredSkillIds)) patch.requiredSkillIds = skillIds;
+        if (assignedMembershipId !== shift.assignedMembershipId)
+          patch.assignedMembershipId = assignedMembershipId;
+        if (location.trim() !== (shift.location ?? '')) patch.location = location.trim() || null;
+        if (notes.trim() !== (shift.notes ?? '')) patch.notes = notes.trim() || null;
+        shiftId = shift.id;
+        if (Object.keys(patch).length > 0) {
+          const saved = await apiSend<ShiftWriteResponse>(
+            'PATCH',
+            orgApi(org, `/shifts/${shift.id}`),
+            { ...patch, version: shift.version },
+          );
+          warnings = saved.warnings;
+        }
       } else {
-        saved = await apiSend<ShiftWriteResponse>('POST', orgApi(org, '/shifts'), {
+        const saved = await apiSend<ShiftWriteResponse>('POST', orgApi(org, '/shifts'), {
           startAt,
           endAt,
           requiredSkillIds: skillIds,
@@ -150,14 +171,13 @@ function ShiftForm({
           ...(location.trim() !== '' && { location: location.trim() }),
           ...(notes.trim() !== '' && { notes: notes.trim() }),
         });
+        shiftId = saved.shift.id;
+        warnings = saved.warnings;
       }
       let offerFailure: string | null = null;
-      if (!shift && postOpen && assignedMembershipId === null) {
+      if (canPostOpen && postOpen && assignedMembershipId === null) {
         try {
-          await apiSend('POST', orgApi(org, '/offers'), {
-            shiftId: saved.shift.id,
-            kind: 'OPEN_SHIFT',
-          });
+          await apiSend('POST', orgApi(org, '/offers'), { shiftId, kind: 'OPEN_SHIFT' });
         } catch (err) {
           offerFailure = errorMessage(err);
         }
@@ -165,12 +185,12 @@ function ShiftForm({
       if (offerFailure)
         return {
           hold: true,
-          notice: `Shift saved, but it could not be posted as an open shift: ${offerFailure}`,
+          notice: `Shift saved, but it couldn't be posted as an open shift: ${offerFailure} Open the shift to try again.`,
         };
-      if (saved.warnings.length > 0)
+      if (warnings.length > 0)
         return {
           hold: true,
-          notice: `Saved. Heads-up: ${saved.warnings.map((w) => RULE_LABELS[w] ?? w).join(', ')} (company policy check)`,
+          notice: `Saved. Heads-up: ${warnings.map((w) => RULE_LABELS[w] ?? w).join(', ')} (company policy check)`,
         };
       return { notice: 'Shift saved.' };
     });
@@ -209,6 +229,19 @@ function ShiftForm({
           <div className="flex justify-end">
             <Button onClick={() => onClose({ notice: done })}>Close</Button>
           </div>
+        </div>
+      ) : confirmingDelete ? (
+        <div className="mt-4 flex flex-col gap-4">
+          <p className="text-sm font-medium">Delete this shift?</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" disabled={pending} onClick={() => setConfirmingDelete(false)}>
+              Keep shift
+            </Button>
+            <Button disabled={pending} onClick={remove}>
+              Yes, delete
+            </Button>
+          </div>
+          <Feedback error={error} />
         </div>
       ) : (
         <form onSubmit={save} className="mt-4 flex flex-col gap-3">
@@ -277,7 +310,7 @@ function ShiftForm({
               ))}
             </select>
           </div>
-          {!shift && assignee === '' && (
+          {canPostOpen && assignee === '' && (
             <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -315,7 +348,7 @@ function ShiftForm({
                 variant="outline"
                 disabled={pending}
                 className="mr-auto"
-                onClick={remove}
+                onClick={() => setConfirmingDelete(true)}
               >
                 Delete shift
               </Button>
@@ -331,4 +364,8 @@ function ShiftForm({
       )}
     </DialogContent>
   );
+}
+
+function sameSet(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((x) => b.includes(x));
 }

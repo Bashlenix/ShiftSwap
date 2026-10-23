@@ -91,7 +91,7 @@ function ReviewList() {
           </table>
         )}
       </section>
-      {offerId && <OfferReviewDetail offerId={offerId} />}
+      {offerId && <OfferReviewDetail key={offerId} offerId={offerId} />}
     </div>
   );
 }
