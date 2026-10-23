@@ -61,6 +61,16 @@ export function OrgLayout() {
             <NavLink to={`${base}/me/availability`} className={navClass}>
               Availability
             </NavLink>
+            {org.accessLevel !== 'EMPLOYEE' && (
+              <>
+                <NavLink to={`${base}/schedule`} className={navClass}>
+                  Schedule
+                </NavLink>
+                <NavLink to={`${base}/review`} className={navClass}>
+                  Offer review
+                </NavLink>
+              </>
+            )}
           </nav>
           <div className="ml-auto flex items-center gap-3">
             <Link to="/orgs" className="text-sm text-indigo-800 underline">

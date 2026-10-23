@@ -3,6 +3,8 @@ import { RequireAuth } from './components/RequireAuth';
 import { LoginPage } from './features/auth/LoginPage';
 import { AvailabilityPage } from './features/availability/AvailabilityPage';
 import { OpenOffersPage } from './features/offers/OpenOffersPage';
+import { OfferReviewPage } from './features/review/OfferReviewPage';
+import { SchedulePage } from './features/schedule/SchedulePage';
 import { OrgLayout } from './features/org/OrgLayout';
 import { OrgPickerPage } from './features/orgs/OrgPickerPage';
 import { MyShiftsPage } from './features/shifts/MyShiftsPage';
@@ -21,6 +23,9 @@ export const router = createBrowserRouter([
           { path: 'me/shifts', element: <MyShiftsPage /> },
           { path: 'offers', element: <OpenOffersPage /> },
           { path: 'me/availability', element: <AvailabilityPage /> },
+          { path: 'schedule', element: <SchedulePage /> },
+          { path: 'review', element: <OfferReviewPage /> },
+          { path: 'review/:offerId', element: <OfferReviewPage /> },
         ],
       },
     ],

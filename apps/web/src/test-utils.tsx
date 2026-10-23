@@ -13,15 +13,17 @@ export const TEST_ORG: OrgInfo = {
   offerLeadTimeMin: 120,
 };
 
-export function renderWithOrg(ui: ReactElement, org: OrgInfo = TEST_ORG) {
+export function renderWithOrg(ui: ReactElement, org: OrgInfo = TEST_ORG, route = '/') {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return render(
     <QueryClientProvider client={client}>
       <OrgContext.Provider value={org}>
-        <MemoryRouter>{ui}</MemoryRouter>
+        <MemoryRouter initialEntries={[route]}>{ui}</MemoryRouter>
       </OrgContext.Provider>
     </QueryClientProvider>,
   );
 }
+
+export const MANAGER_ORG: OrgInfo = { ...TEST_ORG, accessLevel: 'MANAGER' };

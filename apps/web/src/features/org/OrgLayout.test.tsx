@@ -86,4 +86,28 @@ describe('OrgLayout', () => {
     );
     expect(screen.getByRole('button', { name: 'Log out' })).toBeVisible();
   });
+
+  it('hides the manager links from employees and shows them to managers', async () => {
+    apiFetch.mockResolvedValue(me);
+    renderAt('/orgs/o1/me/shifts');
+    await screen.findByText('tz Europe/Berlin');
+    expect(screen.queryByRole('link', { name: 'Schedule' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Offer review' })).toBeNull();
+  });
+
+  it('shows Schedule and Offer review to managers', async () => {
+    apiFetch.mockResolvedValue({
+      ...me,
+      memberships: [{ ...me.memberships[0], accessLevel: 'MANAGER' }],
+    });
+    renderAt('/orgs/o1/me/shifts');
+    expect(await screen.findByRole('link', { name: 'Schedule' })).toHaveAttribute(
+      'href',
+      '/orgs/o1/schedule',
+    );
+    expect(screen.getByRole('link', { name: 'Offer review' })).toHaveAttribute(
+      'href',
+      '/orgs/o1/review',
+    );
+  });
 });
