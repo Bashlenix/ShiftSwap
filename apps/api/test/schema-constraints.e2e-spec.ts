@@ -39,6 +39,13 @@ describe('schema constraints', () => {
     expiresAt: START,
   });
 
+  it('stores timestamps as timestamptz', async () => {
+    const rows = await prisma.$queryRaw<{ data_type: string }[]>`
+      SELECT data_type FROM information_schema.columns
+      WHERE table_name = 'shifts' AND column_name = 'start_at'`;
+    expect(rows[0].data_type).toBe('timestamp with time zone');
+  });
+
   it('rejects a shift whose end is not after its start', async () => {
     await expect(
       prisma.shift.create({ data: { organizationId, startAt: END, endAt: START } }),
@@ -67,7 +74,7 @@ describe('schema constraints', () => {
       status: 'PENDING' as const,
     };
     await prisma.acceptance.create({ data });
-    await expect(prisma.acceptance.create({ data })).rejects.toThrow();
+    await expect(prisma.acceptance.create({ data })).rejects.toMatchObject({ code: 'P2002' });
   });
 
   it('rejects unavailability whose end is not after its start', async () => {
