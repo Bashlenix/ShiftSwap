@@ -1,3 +1,7 @@
+# Fixed project name, so `docker compose logs api` in the Codespace terminal finds the
+# containers the Dev Container started.
+name: shiftswap
+
 services:
   db:
     image: postgres:17-alpine
