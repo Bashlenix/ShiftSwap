@@ -23,7 +23,7 @@ Password for every account: `ShiftSwap-Demo-2026`
 
 - **My shifts**: your next 14 days; offer a shift as a give-away.
 - **Open offers**: accept a give-away or claim an open shift you are allowed to take.
-- **Availability**: your weekly availability.
+- **Availability**: times you can't work (hard block).
 - **Schedule** (managers): the week's roster.
 - **Offer review** (managers): candidates with score breakdown; approve one.
 
