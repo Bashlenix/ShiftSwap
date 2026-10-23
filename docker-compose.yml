@@ -33,7 +33,6 @@ services:
     environment:
       DATABASE_URL: postgresql://shiftswap:shiftswap@db:5432/shiftswap
       SEED_ON_START: 'true'
-      ALLOW_CODESPACE_ORIGINS: 'true'
       AUTH_SECRET_FILE: /data/auth-secret.env
       TRUSTED_ORIGINS: http://127.0.0.1:5173
       CODESPACE_NAME: ${CODESPACE_NAME:-}

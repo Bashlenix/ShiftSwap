@@ -96,6 +96,8 @@ jobs:
           npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . docker compose logs --tail 5 api
           npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . sh -c 'command -v sshd || ls /usr/local/share/ssh-init.sh'
       - name: Smoke test
+        env:
+          SMOKE_FORWARDER: "true"
         run: scripts/smoke-stack.sh
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium

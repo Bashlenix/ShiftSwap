@@ -29,6 +29,14 @@ describe('auth-config', () => {
     expect(isCodespaceOrigin('http://bashlenix-abc123-5173.app.github.dev', demo)).toBe(false);
   });
 
+  it('isCodespaceOrigin trusts only the exact Codespace URL when its name is known', () => {
+    const env = { ...cs, ...demo };
+    expect(isCodespaceOrigin('https://bashlenix-abc123-5173.app.github.dev', env)).toBe(true);
+    expect(isCodespaceOrigin('https://other-codespace-5173.app.github.dev', env)).toBe(false);
+    expect(isTrustedOrigin('https://other-codespace-5173.app.github.dev', env)).toBe(false);
+    expect(isCodespaceOrigin('https://other-codespace-5173.app.github.dev', demo)).toBe(true);
+  });
+
   it('resolveTrustedOrigins lists localhost, Codespace and configured origins', () => {
     expect(resolveTrustedOrigins({})).toEqual(['http://localhost:5173']);
     expect(resolveTrustedOrigins(cs)).toEqual([

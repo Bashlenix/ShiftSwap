@@ -209,6 +209,8 @@ describe('auth from a Codespace forwarded URL', () => {
   it('rejects an untrusted https origin with 403', async () => {
     await signIn('https://evil.example').expect(403);
     await signIn('https://bashlenix-abc123-3000.app.github.dev').expect(403);
+    // Another Codespace's forwarded URL: exact-origin match once the name is known.
+    await signIn('https://someone-else-5173.app.github.dev').expect(403);
   });
 
   // Browsers always send Origin on POST, so only non-browser clients (curl, the smoke
@@ -331,6 +333,15 @@ describe('forwarder-rewritten origin without the Codespace flag', () => {
       .post('/api/auth/sign-in/email')
       .set(TUNNEL_HEADERS)
       .set('X-Forwarded-For', '10.5.0.1')
+      .send({ email: 'nobody@shiftswap.test', password: PASSWORD })
+      .expect(403);
+  });
+
+  it('rejects a Codespace forwarded origin with 403', async () => {
+    await request(app.getHttpServer())
+      .post('/api/auth/sign-in/email')
+      .set('Origin', 'https://attacker-5173.app.github.dev')
+      .set('X-Forwarded-For', '10.5.0.2')
       .send({ email: 'nobody@shiftswap.test', password: PASSWORD })
       .expect(403);
   });

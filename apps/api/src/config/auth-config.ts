@@ -17,9 +17,15 @@ export function resolveBaseUrl(env: NodeJS.ProcessEnv): string | undefined {
   return name && domain ? `https://${name}-${WEB_PORT}.${domain}` : undefined;
 }
 
-/** True only when explicitly enabled and the origin is a forwarded port-5173 Codespace URL. */
+/**
+ * True only when explicitly enabled and the origin is a forwarded port-5173 Codespace URL.
+ * When the Codespace name and domain reach the api, only that exact URL counts; otherwise
+ * (Compose does not always pass them through) any <name>-5173.app.github.dev matches.
+ */
 export function isCodespaceOrigin(origin: string, env: NodeJS.ProcessEnv): boolean {
-  return env.ALLOW_CODESPACE_ORIGINS === 'true' && CODESPACE_ORIGIN.test(origin);
+  if (env.ALLOW_CODESPACE_ORIGINS !== 'true') return false;
+  const exact = resolveBaseUrl(env);
+  return exact ? origin === exact : CODESPACE_ORIGIN.test(origin);
 }
 
 export function resolveTrustedOrigins(env: NodeJS.ProcessEnv): string[] {
