@@ -46,8 +46,8 @@ test("Tom approves Lukas for Anna's give-away", async ({ page }) => {
 
   await detail.getByRole('button', { name: 'Approve Lukas Wolf' }).click();
   await expect(page.getByText('Approved Lukas Wolf.')).toBeVisible();
-  await expect(detail.getByText('Filled', { exact: true })).toBeVisible();
-  await expect(detail.getByText('Selected', { exact: true })).toBeVisible();
+  await expect(detail.getByText(/^\W*Filled$/)).toBeVisible();
+  await expect(detail.getByText(/^\W*Selected$/)).toBeVisible();
   await expect(detail.getByRole('button', { name: 'Approve Lukas Wolf' })).toHaveCount(0);
 });
 
