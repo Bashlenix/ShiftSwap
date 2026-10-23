@@ -148,3 +148,82 @@ describe('auth + /me', () => {
       .expect(200);
   });
 });
+
+describe('auth from a Codespace forwarded URL', () => {
+  const CODESPACE_ORIGIN = 'https://bashlenix-abc123-5173.app.github.dev';
+  let app: INestApplication;
+  let ipN = 0;
+  const nextIp = () => `10.2.0.${++ipN}`;
+  const email = `codespace${Date.now()}@shiftswap.test`;
+
+  beforeAll(async () => {
+    app = await createApp({
+      env: {
+        ...process.env,
+        ALLOW_CODESPACE_ORIGINS: 'true',
+        CODESPACE_NAME: 'bashlenix-abc123',
+        GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN: 'app.github.dev',
+      },
+    });
+    await app.init();
+    await request(app.getHttpServer())
+      .post('/api/auth/sign-up/email')
+      .set('Origin', CODESPACE_ORIGIN)
+      .set('X-Forwarded-For', nextIp())
+      .send({ name: 'Codespace User', email, password: PASSWORD })
+      .expect(200);
+  });
+
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  const signIn = (origin?: string) => {
+    const req = request(app.getHttpServer())
+      .post('/api/auth/sign-in/email')
+      .set('X-Forwarded-For', nextIp());
+    if (origin) req.set('Origin', origin);
+    return req.send({ email, password: PASSWORD });
+  };
+
+  it('signs in with a secure cookie and signs out again', async () => {
+    const res = await signIn(CODESPACE_ORIGIN).expect(200);
+    const setCookie = res.headers['set-cookie'] as unknown as string[];
+    const session = setCookie.find((c) => c.includes('session_token='));
+    expect(session).toMatch(/^__Secure-[^=]*session_token=/);
+    expect(session).toMatch(/;\s*Secure/i);
+    expect(session).toMatch(/HttpOnly/i);
+    const cookie = setCookie.map((c) => c.split(';')[0]).join('; ');
+
+    await request(app.getHttpServer()).get('/api/v1/me').set('Cookie', cookie).expect(200);
+    await request(app.getHttpServer())
+      .post('/api/auth/sign-out')
+      .set('Origin', CODESPACE_ORIGIN)
+      .set('X-Forwarded-For', nextIp())
+      .set('Cookie', cookie)
+      .send({})
+      .expect(200);
+    await request(app.getHttpServer()).get('/api/v1/me').set('Cookie', cookie).expect(401);
+  });
+
+  it('rejects an untrusted https origin with 403', async () => {
+    await signIn('https://evil.example').expect(403);
+    await signIn('https://bashlenix-abc123-3000.app.github.dev').expect(403);
+  });
+
+  // Browsers always send Origin on POST, so only non-browser clients (curl, the smoke
+  // script) omit it. Those are not origin-checked; CSRF protection is SameSite=Lax plus
+  // the Origin check whenever a browser sends one. Pinned so a change is deliberate.
+  it('accepts sign-in and sign-out without an Origin header (non-browser clients)', async () => {
+    const res = await signIn().expect(200);
+    const cookie = (res.headers['set-cookie'] as unknown as string[])
+      .map((c) => c.split(';')[0])
+      .join('; ');
+    await request(app.getHttpServer())
+      .post('/api/auth/sign-out')
+      .set('X-Forwarded-For', nextIp())
+      .set('Cookie', cookie)
+      .send({})
+      .expect(200);
+  });
+});

@@ -9,7 +9,7 @@ import { PrismaModule } from './prisma/prisma.module';
 
 @Module({})
 export class AppModule {
-  static register(options: { prisma?: PrismaClient } = {}): DynamicModule {
+  static register(options: { prisma?: PrismaClient; env?: NodeJS.ProcessEnv } = {}): DynamicModule {
     return {
       module: AppModule,
       imports: [
@@ -29,7 +29,7 @@ export class AppModule {
           },
         }),
         PrismaModule.register(options.prisma),
-        AuthModule,
+        AuthModule.register(options.env ?? process.env),
       ],
       controllers: [HealthController, MeController],
     };

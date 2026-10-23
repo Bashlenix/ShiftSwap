@@ -11,12 +11,15 @@ import type { PrismaClient } from './generated/prisma/client';
 export interface CreateAppOptions {
   /** Replaces the PrismaService provider (used by tests). */
   prisma?: PrismaClient;
+  /** Environment for auth config and the Origin guard (defaults to process.env). */
+  env?: NodeJS.ProcessEnv;
 }
 
 /** Single wiring point used by main.ts and every test. */
 export async function createApp(options: CreateAppOptions = {}): Promise<INestApplication> {
   // bodyParser is off so Better Auth can be mounted before the JSON parser.
-  const app = await NestFactory.create(AppModule.register({ prisma: options.prisma }), {
+  const env = options.env ?? process.env;
+  const app = await NestFactory.create(AppModule.register({ prisma: options.prisma, env }), {
     bodyParser: false,
     bufferLogs: true,
   });
@@ -29,7 +32,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<INestAp
   // origins on cookie-less state-changing requests (e.g. login CSRF).
   expressApp.use('/api/auth', (req: Request, res: Response, next: NextFunction) => {
     const origin = req.headers.origin;
-    if (req.method !== 'GET' && origin && !isTrustedOrigin(origin, process.env)) {
+    if (req.method !== 'GET' && origin && !isTrustedOrigin(origin, env)) {
       res.status(403).json({ message: 'Invalid origin' });
       return;
     }
