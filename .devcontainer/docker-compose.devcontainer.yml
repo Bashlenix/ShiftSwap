@@ -1,0 +1,17 @@
+services:
+  # Demo-only: trust the Codespaces port forwarder's origins (https://localhost:5173 and
+  # the forwarded *.app.github.dev URL). Not in the base file so a plain `docker compose up`
+  # on a laptop does not trust them.
+  api:
+    environment:
+      ALLOW_CODESPACE_ORIGINS: 'true'
+
+  workspace:
+    image: mcr.microsoft.com/devcontainers/typescript-node:5.2.3-22-bookworm
+    volumes:
+      - .:/workspaces/ShiftSwap:cached
+    command: sleep infinity
+    # Codespaces forwards ports from inside this (primary) container. Sharing the web
+    # container's network makes localhost:5173 here the web app, so the forwarded URL
+    # stays https://<codespace>-5173.app.github.dev.
+    network_mode: service:web

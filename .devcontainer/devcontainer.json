@@ -1,0 +1,17 @@
+{
+  "name": "ShiftSwap",
+  "dockerComposeFile": ["../docker-compose.yml", "docker-compose.devcontainer.yml"],
+  "service": "workspace",
+  "workspaceFolder": "/workspaces/ShiftSwap",
+  "runServices": ["db", "mailpit", "api", "web", "workspace"],
+  "features": {
+    "ghcr.io/devcontainers/features/sshd:1": {},
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {}
+  },
+  "forwardPorts": [5173],
+  "portsAttributes": {
+    "5173": { "label": "ShiftSwap", "onAutoForward": "openBrowser" }
+  },
+  "onCreateCommand": "npm ci",
+  "customizations": { "codespaces": { "openFiles": ["DEMO_ACCOUNTS.md"] } }
+}

@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: shiftswap
+          POSTGRES_PASSWORD: shiftswap
+          POSTGRES_DB: shiftswap
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U shiftswap"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgresql://shiftswap:shiftswap@localhost:5432/shiftswap
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - name: API database tests
+        run: npm run test:e2e -w @shiftswap/api
+      - run: npm audit --audit-level=critical
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  stack-smoke:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Smoke-check helpers self-test
+        run: scripts/test-smoke-checks.sh
+      - name: Start the stack
+        run: docker compose up -d --build --wait
+      - name: Smoke test
+        run: scripts/smoke-stack.sh
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs api web db
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v
+
+  zero-setup:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      COMPOSE_FILES: -f docker-compose.yml -f .devcontainer/docker-compose.devcontainer.yml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install test tooling
+        run: npm ci --ignore-scripts
+      - name: Start the dev container (same path as a Codespace)
+        run: npx --yes @devcontainers/cli@0.89.0 up --workspace-folder .
+      - name: Wait for the login page
+        run: npx --yes wait-on@9.5.1 -t 300000 http-get://localhost:5173/login
+      # Codespaces forwards ports from inside the workspace container, not from the VM,
+      # so the web app (and Mailpit) must be reachable from there.
+      - name: Web and Mailpit reachable from the workspace container
+        run: |
+          npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . node -e "fetch('http://localhost:5173/login').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+          npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . node -e "fetch('http://mailpit:8025/').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+      - name: Debug tooling works in the workspace container (docker compose logs, sshd)
+        run: |
+          npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . docker compose logs --tail 5 api
+          npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . sh -c 'command -v sshd || ls /usr/local/share/ssh-init.sh'
+      - name: Smoke test
+        env:
+          SMOKE_FORWARDER: "true"
+        run: scripts/smoke-stack.sh
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Browser tests (login, accessibility)
+        run: npx playwright test -c e2e
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          if-no-files-found: ignore
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          docker ps -a
+          docker compose $COMPOSE_FILES logs
+      - name: Stop the stack
+        if: always()
+        run: docker compose $COMPOSE_FILES down -v

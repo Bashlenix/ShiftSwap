@@ -942,7 +942,8 @@ sequenceDiagram
 
 - `.devcontainer/devcontainer.json`
   - `dockerComposeFile` + `service: workspace`, `runServices: [db, mailpit, api, web, workspace]`
-  - `forwardPorts: [5173, 8025]`; `portsAttributes`: 5173 label "ShiftSwap", `onAutoForward: openBrowser`; 8025 label "Mailpit", `silent`; API port 3000 not forwarded (reached via proxy)
+  - `forwardPorts: [5173]`; `portsAttributes`: 5173 label "ShiftSwap", `onAutoForward: openBrowser`; API port 3000 not forwarded (reached via proxy). Mailpit (8025) is not forwarded until a feature sends email (`host:port` entries in `forwardPorts` are not documented for Codespaces and coincided with nothing being forwarded)
+  - features `sshd` and `docker-outside-of-docker` so `gh codespace logs`/`ssh` and `docker compose logs` work for debugging
   - `onCreateCommand`: `npm ci`, `prisma generate`, build web + api (runs inside the **prebuild**, so it is not repeated at open time)
   - No `postStartCommand` that needs the user; all runtime steps live in container entrypoints
 - `docker-compose.yml`: `db` (postgres, healthcheck), `mailpit`, `api` (entrypoint: secret → migrate → seed → `node dist/main`, `restart: unless-stopped`, `depends_on: db healthy`), `web` (`vite preview` with `/api` proxy, `depends_on: api healthy`), `workspace` (dev tools).

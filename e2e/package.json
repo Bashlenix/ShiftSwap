@@ -1,0 +1,12 @@
+{
+  "name": "@shiftswap/e2e",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "echo \"e2e runs against a live stack: npx playwright test -c e2e\""
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.14.0",
+    "@playwright/test": "^1.64.1"
+  }
+}
