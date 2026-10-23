@@ -11,7 +11,9 @@ export function overlaps(a: Interval, b: Interval): boolean {
 }
 
 function local(at: Date, tz: string): DateTime {
-  return DateTime.fromJSDate(at, { zone: tz });
+  const dt = DateTime.fromJSDate(at, { zone: tz });
+  if (!dt.isValid) throw new Error(`Invalid timezone: ${tz}`);
+  return dt;
 }
 
 export function localDateKey(at: Date, tz: string): string {

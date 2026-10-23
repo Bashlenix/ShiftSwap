@@ -106,4 +106,43 @@ describe('checkEligibility', () => {
     const r = checkEligibility(ctx({ candidateShifts: [sh('t', '2026-11-06T18:00', '2026-11-06T23:00')] }), target);
     expect(r).toEqual({ eligible: true, failedRules: [] });
   });
+
+  it('back-to-back shift is MIN_REST, not OVERLAP', () => {
+    const r = checkEligibility(ctx({ candidateShifts: [sh('x', '2026-11-06T14:00', '2026-11-06T18:00')] }), target);
+    expect(r).toEqual({ eligible: false, failedRules: ['MIN_REST'] });
+  });
+
+  it('unavailability ending exactly at target start is fine', () => {
+    const r = checkEligibility(ctx({ unavailability: [{ startAt: at('2026-11-06T15:00'), endAt: at('2026-11-06T18:00') }] }), target);
+    expect(r).toEqual({ eligible: true, failedRules: [] });
+  });
+
+  it('previous-day overnight shift is not in the daily total', () => {
+    const r = checkEligibility(
+      ctx({ org: { ...org, maxDailyMin: 360 }, candidateShifts: [sh('x', '2026-11-05T22:00', '2026-11-06T06:00')] }),
+      target,
+    );
+    expect(r).toEqual({ eligible: true, failedRules: [] });
+  });
+
+  it('shift starting exactly next Monday 00:00 is excluded from the weekly total', () => {
+    const r = checkEligibility(
+      ctx({ candidate: { ...candidate, weeklyLimitMin: 360 }, candidateShifts: [sh('x', '2026-11-09T00:00', '2026-11-09T06:00')] }),
+      target,
+    );
+    expect(r).toEqual({ eligible: true, failedRules: [] });
+  });
+
+  it('DST-end overnight shift counts 540 min toward its week', () => {
+    const dst: TargetShift = { ...target, startAt: at('2026-10-24T22:00'), endAt: at('2026-10-25T06:00') };
+    // 1900 existing min: 1900 + 480 = 2380 would pass, 1900 + 540 = 2440 fails.
+    const existing = [
+      sh('a', '2026-10-19T10:00', '2026-10-19T20:00'),
+      sh('b', '2026-10-20T10:00', '2026-10-20T20:00'),
+      sh('c', '2026-10-21T10:00', '2026-10-21T20:00'),
+      sh('d', '2026-10-22T10:00', '2026-10-22T11:40'),
+    ];
+    const r = checkEligibility(ctx({ candidateShifts: existing }), dst);
+    expect(r).toEqual({ eligible: false, failedRules: ['WEEKLY_LIMIT'] });
+  });
 });

@@ -35,4 +35,9 @@ describe('time helpers', () => {
     const w = weekWindow(at('2026-10-21T12:00'), TZ);
     expect(durationMin(w)).toBe(169 * 60);
   });
+
+  it('throws on an invalid timezone', () => {
+    expect(() => localDateKey(at('2026-11-01T12:00'), 'Mars/Olympus')).toThrow('Invalid timezone: Mars/Olympus');
+    expect(() => weekWindow(at('2026-11-01T12:00'), 'Mars/Olympus')).toThrow('Invalid timezone: Mars/Olympus');
+  });
 });
