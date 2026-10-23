@@ -23,8 +23,6 @@ describe('shifts API', () => {
     assignedMembershipId: null,
     ...over,
   });
-  const auditCount = (action: string) =>
-    ctx.prisma.auditLog.count({ where: { organizationId: orgId, action } });
 
   beforeAll(async () => {
     ctx = await createTestApp();
@@ -243,21 +241,156 @@ describe('shifts API', () => {
     expect(res.status).toBe(404);
   });
 
-  it('writes audit rows with scheduling fields only', async () => {
-    const created = await auditCount('shift.created');
-    const updated = await auditCount('shift.updated');
-    const deleted = await auditCount('shift.deleted');
-    expect(created).toBeGreaterThanOrEqual(8);
-    expect(updated).toBeGreaterThanOrEqual(2);
-    expect(deleted).toBe(1);
-    const row = await ctx.prisma.auditLog.findFirstOrThrow({
-      where: { organizationId: orgId, action: 'shift.updated' },
+  it('PATCH/DELETE of a real shift in another org -> 404', async () => {
+    const foreign = await ctx.prisma.shift.create({
+      data: {
+        organizationId: otherOrgId,
+        startAt: new Date('2027-03-12T08:00:00Z'),
+        endAt: new Date('2027-03-12T12:00:00Z'),
+      },
     });
-    expect(Object.keys(row.before as object).sort()).toEqual(
-      expect.arrayContaining(['assignedMembershipId', 'endAt', 'requiredSkillIds', 'startAt']),
+    const p = await api(app, manager.cookie)
+      .patch(url(`/${foreign.id}`))
+      .send({ version: 1, notes: 'x' });
+    expect(p.status).toBe(404);
+    expect(p.body.error.code).toBe('NOT_FOUND');
+    const d = await api(app, manager.cookie).delete(url(`/${foreign.id}?version=1`));
+    expect(d.status).toBe(404);
+    expect(d.body.error.code).toBe('NOT_FOUND');
+    const still = await ctx.prisma.shift.findUniqueOrThrow({ where: { id: foreign.id } });
+    expect(still.version).toBe(1);
+    expect(still.deletedAt).toBeNull();
+  });
+
+  it('PATCH requiredSkillIds replaces the set; stale PATCH leaves skills alone', async () => {
+    const other = await ctx.prisma.skill.create({
+      data: { organizationId: orgId, name: 'Kitchen' },
+    });
+    const c = await create({
+      startAt: iso('2027-03-13T08:00:00Z'),
+      endAt: iso('2027-03-13T12:00:00Z'),
+      requiredSkillIds: [barSkillId],
+    });
+    const id = c.body.shift.id;
+    const ok = await api(app, manager.cookie)
+      .patch(url(`/${id}`))
+      .send({ version: 1, requiredSkillIds: [other.id] });
+    expect(ok.status).toBe(200);
+    const get = await api(app, manager.cookie).get(
+      url(`?from=${iso('2027-03-13T00:00:00Z')}&to=${iso('2027-03-14T00:00:00Z')}`),
     );
-    expect(JSON.stringify({ b: row.before, a: row.after, m: row.metadata })).not.toMatch(
-      /@shiftswap\.test/,
+    expect(get.body[0].requiredSkillIds).toEqual([other.id]);
+    const stale = await api(app, manager.cookie)
+      .patch(url(`/${id}`))
+      .send({ version: 1, requiredSkillIds: [barSkillId] });
+    expect(stale.status).toBe(409);
+    const rows = await ctx.prisma.shiftSkill.findMany({ where: { shiftId: id } });
+    expect(rows.map((r) => r.skillId)).toEqual([other.id]);
+  });
+
+  it('PATCH with a foreign-org skill -> 404 and nothing changes', async () => {
+    const c = await create({
+      startAt: iso('2027-03-14T08:00:00Z'),
+      endAt: iso('2027-03-14T12:00:00Z'),
+    });
+    const id = c.body.shift.id;
+    const res = await api(app, manager.cookie)
+      .patch(url(`/${id}`))
+      .send({ version: 1, requiredSkillIds: [foreignSkillId] });
+    expect(res.status).toBe(404);
+    const row = await ctx.prisma.shift.findUniqueOrThrow({ where: { id } });
+    expect(row.version).toBe(1);
+  });
+
+  it('PATCH assigning an unqualified member -> MISSING_SKILL warning', async () => {
+    const c = await create({
+      startAt: iso('2027-03-15T08:00:00Z'),
+      endAt: iso('2027-03-15T12:00:00Z'),
+      requiredSkillIds: [barSkillId],
+    });
+    const res = await api(app, manager.cookie)
+      .patch(url(`/${c.body.shift.id}`))
+      .send({ version: 1, assignedMembershipId: ben.membershipId });
+    expect(res.status).toBe(200);
+    expect(res.body.warnings).toEqual(['MISSING_SKILL']);
+  });
+
+  it('employee PATCH/DELETE -> 403', async () => {
+    const c = await create({
+      startAt: iso('2027-03-16T08:00:00Z'),
+      endAt: iso('2027-03-16T12:00:00Z'),
+    });
+    const id = c.body.shift.id;
+    await api(app, anna.cookie)
+      .patch(url(`/${id}`))
+      .send({ version: 1, notes: 'x' })
+      .expect(403);
+    await api(app, anna.cookie)
+      .delete(url(`/${id}?version=1`))
+      .expect(403);
+  });
+
+  it('list returns a shift that starts before from and ends inside the window', async () => {
+    await create({ startAt: iso('2027-03-17T20:00:00Z'), endAt: iso('2027-03-18T04:00:00Z') });
+    const res = await api(app, manager.cookie).get(
+      url(`?from=${iso('2027-03-18T00:00:00Z')}&to=${iso('2027-03-19T00:00:00Z')}`),
     );
+    expect(res.body.length).toBe(1);
+    expect(res.body[0].startAt).toBe(iso('2027-03-17T20:00:00Z'));
+  });
+
+  it('soft-deleted neighbour does not cause an OVERLAP warning', async () => {
+    const first = await create({
+      startAt: iso('2027-03-20T08:00:00Z'),
+      endAt: iso('2027-03-20T12:00:00Z'),
+      assignedMembershipId: anna.membershipId,
+    });
+    await api(app, manager.cookie)
+      .delete(url(`/${first.body.shift.id}?version=1`))
+      .expect(204);
+    const second = await create({
+      startAt: iso('2027-03-20T09:00:00Z'),
+      endAt: iso('2027-03-20T11:00:00Z'),
+      assignedMembershipId: anna.membershipId,
+    });
+    expect(second.body.warnings).toEqual([]);
+    const third = await create({
+      startAt: iso('2027-03-20T10:00:00Z'),
+      endAt: iso('2027-03-20T11:30:00Z'),
+      assignedMembershipId: anna.membershipId,
+    });
+    expect(third.body.warnings).toEqual(['OVERLAP']);
+  });
+
+  it('free-text date range is 400', async () => {
+    const res = await api(app, manager.cookie).get(url(`?from=March 1&to=${base}`));
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_FAILED');
+  });
+
+  it('writes one audit row per write, scheduling fields only', async () => {
+    const rows = await ctx.prisma.auditLog.findMany({
+      where: { organizationId: orgId, entityType: 'shift' },
+    });
+    const keys = new Set(rows.map((r) => `${r.entityId}:${r.action}`));
+    expect(keys.size).toBe(rows.length);
+    const actions = new Set(rows.map((r) => r.action));
+    expect(actions).toEqual(new Set(['shift.created', 'shift.updated', 'shift.deleted']));
+    const allowed = ['assignedMembershipId', 'endAt', 'requiredSkillIds', 'startAt'];
+    for (const r of rows) {
+      for (const snap of [r.before, r.after]) {
+        if (snap !== null) expect(Object.keys(snap as object).sort()).toEqual(allowed);
+      }
+      expect(r.metadata).toBeNull();
+    }
+    const nulls = await ctx.prisma.$queryRaw<{ action: string; b: boolean; a: boolean }[]>`
+      SELECT action, before IS NULL AS b, after IS NULL AS a
+      FROM audit_logs WHERE organization_id = ${orgId}`;
+    for (const n of nulls) {
+      if (n.action === 'shift.created') expect(n).toMatchObject({ b: true, a: false });
+      if (n.action === 'shift.updated') expect(n).toMatchObject({ b: false, a: false });
+      if (n.action === 'shift.deleted') expect(n).toMatchObject({ b: false, a: true });
+    }
+    expect(JSON.stringify(rows.map((r) => [r.before, r.after]))).not.toMatch(/@shiftswap\.test/);
   });
 });

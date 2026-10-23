@@ -50,6 +50,9 @@ export const updateShiftSchema = z
   })
   .superRefine((v, ctx) => checkRange(v, ctx, MAX_SHIFT_MS));
 
+/** Query of GET /shifts: ISO date-times with offset. */
+export const rangeQuerySchema = z.object({ from: isoDate, to: isoDate });
+
 export const createUnavailabilitySchema = z
   .object({ startAt: isoDate, endAt: isoDate })
   .superRefine((v, ctx) => checkRange(v, ctx));

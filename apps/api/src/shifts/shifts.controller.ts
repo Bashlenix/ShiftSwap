@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import {
   createShiftSchema,
+  rangeQuerySchema,
   updateShiftSchema,
   type CreateShiftInput,
   type ShiftDto,
@@ -34,12 +35,6 @@ const invalid = (message: string, path: string) =>
     issues: [{ path, message }],
   });
 
-function parseDate(value: unknown, name: string): Date {
-  const ms = typeof value === 'string' ? Date.parse(value) : NaN;
-  if (Number.isNaN(ms)) throw invalid('Must be an ISO date-time', name);
-  return new Date(ms);
-}
-
 /** Unknown / malformed shift ids look like any other missing shift. */
 function shiftId(id: string): string {
   if (!UUID.test(id)) throw new DomainError('NOT_FOUND', 'Not found');
@@ -58,8 +53,17 @@ export class ShiftsController {
     @Query('to') toRaw?: string,
     @Query('mine') mineRaw?: string,
   ): Promise<ShiftDto[]> {
-    const from = parseDate(fromRaw, 'from');
-    const to = parseDate(toRaw, 'to');
+    const parsed = rangeQuerySchema.safeParse({ from: fromRaw, to: toRaw });
+    if (!parsed.success) {
+      throw new DomainError('VALIDATION_FAILED', 'Request validation failed', {
+        issues: parsed.error.issues.map((i) => ({
+          path: i.path.map(String).join('.'),
+          message: 'Must be an ISO date-time with offset',
+        })),
+      });
+    }
+    const from = new Date(parsed.data.from);
+    const to = new Date(parsed.data.to);
     if (to <= from) throw invalid('to must be after from', 'to');
     if (to.getTime() - from.getTime() > MAX_RANGE_MS) {
       throw invalid('Range can be at most 35 days', 'to');

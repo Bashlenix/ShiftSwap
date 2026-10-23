@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createShiftSchema,
   createUnavailabilitySchema,
+  rangeQuerySchema,
   shiftTimesError,
   updateShiftSchema,
 } from './shifts';
@@ -90,5 +91,17 @@ describe('createUnavailabilitySchema', () => {
       endAt: '2026-11-02T08:00:00.000Z',
     });
     expect(r.success).toBe(false);
+  });
+});
+
+describe('rangeQuerySchema', () => {
+  it('accepts ISO with offset and rejects free text', () => {
+    expect(
+      rangeQuerySchema.safeParse({ from: '2027-03-01T00:00:00Z', to: '2027-03-02T00:00:00+01:00' })
+        .success,
+    ).toBe(true);
+    expect(
+      rangeQuerySchema.safeParse({ from: 'March 1', to: '2027-03-02T00:00:00Z' }).success,
+    ).toBe(false);
   });
 });

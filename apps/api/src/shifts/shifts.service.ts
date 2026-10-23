@@ -81,7 +81,7 @@ export class ShiftsService {
         action: 'shift.created',
         entityType: 'shift',
         entityId: created.id,
-        after: { ...toAuditSnapshot(created), location: created.location, notes: created.notes },
+        after: toAuditSnapshot(created),
       });
       await this.onShiftChanged(tx, null, created);
       return { shift: toShiftDto(created), warnings: await this.warningsFor(tx, org, created) };
