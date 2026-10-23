@@ -10,8 +10,11 @@ COPY packages/shared packages/shared
 COPY apps/api apps/api
 COPY apps/web/package.json apps/web/package.json
 RUN npm ci --workspaces --include-workspace-root
+# Reinstall production-only deps for the api (root-level `npm prune` strips workspace deps).
+# --ignore-scripts: dist/generated already holds the Prisma client and shared is already built.
 RUN npm run build -w @shiftswap/api \
-  && npm prune --omit=dev
+  && rm -rf node_modules apps/*/node_modules packages/*/node_modules \
+  && npm ci --omit=dev --ignore-scripts -w @shiftswap/api
 
 FROM node:22.23.4-bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
