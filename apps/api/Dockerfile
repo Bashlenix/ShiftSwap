@@ -6,10 +6,10 @@ WORKDIR /app
 # Root postinstall builds packages/shared, so its sources must exist before `npm ci`.
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/shared packages/shared
-COPY apps/api/package.json apps/api/package.json
+# The api postinstall runs `prisma generate`, so the whole api source (schema, prisma.config.ts) must be present.
+COPY apps/api apps/api
 COPY apps/web/package.json apps/web/package.json
 RUN npm ci --workspaces --include-workspace-root
-COPY apps/api apps/api
 RUN npm run build -w @shiftswap/api \
   && npm prune --omit=dev
 
