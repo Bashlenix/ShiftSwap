@@ -1,6 +1,20 @@
+import { DateTime } from 'luxon';
 import type { Auth } from '../auth/auth';
 import type { PrismaClient } from '../generated/prisma/client';
-import { DEMO_ACCOUNTS, DEMO_ORGS, DEMO_PASSWORD, DEMO_PLACEHOLDERS } from './demo-data';
+import {
+  DEMO_ACCOUNTS,
+  DEMO_MEMBER_SKILLS,
+  DEMO_OFFERS,
+  DEMO_OFFER_LEAD_MIN,
+  DEMO_ORGS,
+  DEMO_PASSWORD,
+  DEMO_PLACEHOLDERS,
+  DEMO_SHIFTS,
+  DEMO_SKILLS,
+  demoShiftWindow,
+} from './demo-data';
+
+const DEMO_TZ = 'Europe/Berlin';
 
 const quoteIdent = (name: string) => `"${name.replaceAll('"', '""')}"`;
 
@@ -23,14 +37,26 @@ async function resetAppTables(prisma: PrismaClient): Promise<void> {
 export async function seedDemo(
   prisma: PrismaClient,
   auth: Auth,
-): Promise<{ users: number; organizations: number; memberships: number }> {
+): Promise<{
+  users: number;
+  organizations: number;
+  memberships: number;
+  skills: number;
+  shifts: number;
+  offers: number;
+  acceptances: number;
+}> {
   await resetAppTables(prisma);
 
   const orgIds = new Map<string, string>();
   for (const org of DEMO_ORGS) {
-    const created = await prisma.organization.create({ data: { name: org.name } });
+    const created = await prisma.organization.create({
+      data: { name: org.name, timezone: DEMO_TZ, offerLeadTimeMin: DEMO_OFFER_LEAD_MIN },
+    });
     orgIds.set(org.key, created.id);
   }
+  // Memberships by `${org}|${email or placeholder name}`.
+  const memberIds = new Map<string, string>();
 
   for (const account of DEMO_ACCOUNTS) {
     // Library signup hashes the password; never hash by hand.
@@ -38,7 +64,7 @@ export async function seedDemo(
       body: { email: account.email, password: DEMO_PASSWORD, name: account.name },
     });
     for (const m of account.memberships) {
-      await prisma.membership.create({
+      const membership = await prisma.membership.create({
         data: {
           organizationId: orgIds.get(m.org)!,
           userId: user.id,
@@ -47,11 +73,12 @@ export async function seedDemo(
           accessLevel: m.accessLevel,
         },
       });
+      memberIds.set(`${m.org}|${account.email}`, membership.id);
     }
   }
 
   for (const p of DEMO_PLACEHOLDERS) {
-    await prisma.membership.create({
+    const membership = await prisma.membership.create({
       data: {
         organizationId: orgIds.get(p.org)!,
         userId: null,
@@ -60,15 +87,97 @@ export async function seedDemo(
         accessLevel: p.accessLevel,
       },
     });
+    memberIds.set(`${p.org}|${p.name}`, membership.id);
+  }
+
+  // Skills.
+  const skillIds = new Map<string, string>();
+  for (const s of DEMO_SKILLS) {
+    const created = await prisma.skill.create({
+      data: { organizationId: orgIds.get(s.org)!, name: s.name },
+    });
+    skillIds.set(`${s.org}|${s.name}`, created.id);
+  }
+  await prisma.membershipSkill.createMany({
+    data: DEMO_MEMBER_SKILLS.flatMap((ms) =>
+      ms.skills.map((name) => ({
+        membershipId: memberIds.get(`${ms.org}|${ms.member}`)!,
+        skillId: skillIds.get(`${ms.org}|${name}`)!,
+      })),
+    ),
+  });
+
+  // Shifts, relative to today in the org timezone.
+  const today = DateTime.now().setZone(DEMO_TZ).startOf('day');
+  const shiftRows = DEMO_SHIFTS.map((s) => ({
+    def: s,
+    id: crypto.randomUUID(),
+    ...demoShiftWindow(today, s, DEMO_TZ),
+  }));
+  await prisma.shift.createMany({
+    data: shiftRows.map((r) => ({
+      id: r.id,
+      organizationId: orgIds.get(r.def.org)!,
+      startAt: r.startAt,
+      endAt: r.endAt,
+      assignedMembershipId: r.def.assignee
+        ? memberIds.get(`${r.def.org}|${r.def.assignee}`)!
+        : null,
+    })),
+  });
+  await prisma.shiftSkill.createMany({
+    data: shiftRows.flatMap((r) =>
+      r.def.skills.map((name) => ({
+        shiftId: r.id,
+        skillId: skillIds.get(`${r.def.org}|${name}`)!,
+      })),
+    ),
+  });
+
+  // Offers + acceptances (Lukas strictly before Mia so ties break in his favour).
+  const now = Date.now();
+  for (const o of DEMO_OFFERS) {
+    const shift = shiftRows.find((r) => r.def.key === o.shift)!;
+    const org = shift.def.org;
+    const expiresAt = new Date(shift.startAt.getTime() - DEMO_OFFER_LEAD_MIN * 60_000);
+    if (expiresAt.getTime() <= now) {
+      throw new Error(`Demo offer on ${o.shift} would already be expired`);
+    }
+    const offer = await prisma.offer.create({
+      data: {
+        organizationId: orgIds.get(org)!,
+        shiftId: shift.id,
+        kind: o.kind,
+        originalOwnerMembershipId: o.originalOwner
+          ? memberIds.get(`${org}|${o.originalOwner}`)!
+          : null,
+        createdByMembershipId: memberIds.get(`${org}|${o.createdBy}`)!,
+        expiresAt,
+      },
+    });
+    await prisma.acceptance.createMany({
+      data: o.acceptances.map((email, i) => ({
+        organizationId: orgIds.get(org)!,
+        offerId: offer.id,
+        membershipId: memberIds.get(`${org}|${email}`)!,
+        status: 'PENDING' as const,
+        createdAt: new Date(now - (o.acceptances.length - i) * 60_000),
+      })),
+    });
   }
 
   // Sessions created by signup are not needed; the demo logs in fresh.
   await prisma.session.deleteMany();
 
-  const [users, organizations, memberships] = await Promise.all([
-    prisma.user.count(),
-    prisma.organization.count(),
-    prisma.membership.count(),
-  ]);
-  return { users, organizations, memberships };
+  const [users, organizations, memberships, skills, shifts, offers, acceptances] =
+    await Promise.all([
+      prisma.user.count(),
+      prisma.organization.count(),
+      prisma.membership.count(),
+      prisma.skill.count(),
+      prisma.shift.count(),
+      prisma.offer.count(),
+      prisma.acceptance.count(),
+    ]);
+  return { users, organizations, memberships, skills, shifts, offers, acceptances };
 }
