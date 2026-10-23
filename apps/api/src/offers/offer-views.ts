@@ -1,4 +1,5 @@
 import type {
+  AcceptanceDto,
   AcceptanceStatus,
   OfferDetailDto,
   OfferSummaryDto,
@@ -6,15 +7,6 @@ import type {
 } from '@shiftswap/shared';
 import type { Offer, Prisma } from '../generated/prisma/client';
 import { SHIFT_INCLUDE, toShiftDto, type ShiftRow } from '../shifts/shift-mapper';
-
-/** What the acceptance endpoints return (the caller's own acceptance row). */
-export interface AcceptanceDto {
-  id: string;
-  offerId: string;
-  membershipId: string;
-  status: AcceptanceStatus;
-  createdAt: string;
-}
 
 /** Include for summaries: shift (+ open offer id), the caller's own acceptance, pending count. */
 export const offerInclude = (callerMembershipId: string) =>

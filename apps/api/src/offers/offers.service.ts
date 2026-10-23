@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type {
+  AcceptanceDto,
   ApproveOfferInput,
   CreateOfferInput,
   OfferDetailDto,
@@ -31,7 +32,6 @@ import {
   toAcceptanceDto,
   toOfferDetail,
   toOfferSummary,
-  type AcceptanceDto,
   type OfferRow,
 } from './offer-views';
 

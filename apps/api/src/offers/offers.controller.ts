@@ -14,6 +14,7 @@ import {
   approveOfferSchema,
   createOfferSchema,
   versionSchema,
+  type AcceptanceDto,
   type ApproveOfferInput,
   type CreateOfferInput,
   type OfferDetailDto,
@@ -27,7 +28,6 @@ import { ZodBody } from '../common/zod-body.pipe';
 import { MinAccess } from '../tenancy/min-access.decorator';
 import { Org, type OrgContext } from '../tenancy/org-context.decorator';
 import { OrgGuard } from '../tenancy/org.guard';
-import type { AcceptanceDto } from './offer-views';
 import { OffersService, type OfferScope } from './offers.service';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

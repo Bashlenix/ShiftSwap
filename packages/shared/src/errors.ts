@@ -35,3 +35,13 @@ export const RULE_LABELS: Record<RuleCode, string> = {
   DAILY_LIMIT: 'Over the daily hour limit',
   WEEKLY_LIMIT: 'Over the weekly hour limit',
 };
+
+export interface ValidationIssue {
+  /** Dot-joined path of the offending field. */
+  path: string;
+  message: string;
+}
+
+export interface ApiErrorBody {
+  error: { code: ErrorCode; message: string; details?: Record<string, unknown> };
+}

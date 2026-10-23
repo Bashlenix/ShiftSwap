@@ -5,7 +5,13 @@ export type AccessLevel = 'EMPLOYEE' | 'MANAGER' | 'ADMIN';
 
 export interface Me {
   user: { id: string; email: string; name: string };
-  memberships: { organizationId: string; organizationName: string; accessLevel: AccessLevel }[];
+  memberships: {
+    membershipId: string;
+    organizationId: string;
+    organizationName: string;
+    organizationTimezone: string;
+    accessLevel: AccessLevel;
+  }[];
 }
 
 export function useMe() {
