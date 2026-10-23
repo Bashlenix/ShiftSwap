@@ -27,6 +27,8 @@ COPY --from=build --chown=node:node /app/package.json package.json
 COPY --from=build --chown=node:node /app/packages/shared/package.json packages/shared/package.json
 COPY --from=build --chown=node:node /app/packages/shared/dist packages/shared/dist
 COPY --from=build --chown=node:node /app/apps/api/package.json apps/api/package.json
+# npm keeps some api deps (e.g. @nestjs/*) in apps/api/node_modules rather than hoisting them.
+COPY --from=build --chown=node:node /app/apps/api/node_modules apps/api/node_modules
 COPY --from=build --chown=node:node /app/apps/api/dist apps/api/dist
 COPY --from=build --chown=node:node /app/apps/api/prisma apps/api/prisma
 COPY --from=build --chown=node:node /app/apps/api/prisma.config.ts apps/api/prisma.config.ts
