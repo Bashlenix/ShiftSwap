@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { renderWithOrg } from '../../test-utils';
+import { renderWithOrg, TEST_ORG } from '../../test-utils';
 import { MyShiftsPage } from './MyShiftsPage';
 
 const apiFetch = vi.hoisted(() => vi.fn());
@@ -80,6 +80,34 @@ describe('MyShiftsPage', () => {
         kind: 'GIVE_AWAY',
       }),
     );
+  });
+
+  it('announces success, names the shift in the dialog and moves focus to feedback', async () => {
+    setup([shift('s1', 48)]);
+    renderWithOrg(<MyShiftsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Offer this shift' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('Front');
+    expect(dialog).toHaveTextContent(/\d{2}:\d{2}–\d{2}:\d{2}/);
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+    const note = await screen.findByText('Shift offered.');
+    expect(note.parentElement).toHaveAttribute('aria-live', 'polite');
+    await waitFor(() => expect(note.parentElement).toHaveFocus());
+  });
+
+  it('announces a withdrawn offer', async () => {
+    const s = shift('s1', 48, { openOfferId: 'of-s1' });
+    setup([s], [offerFor(s)]);
+    renderWithOrg(<MyShiftsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Withdraw offer' }));
+    expect(await screen.findByText('Offer withdrawn.')).toBeVisible();
+  });
+
+  it('uses the org lead time (240 min) to hide the offer button', async () => {
+    setup([shift('s1', 3), shift('s2', 5, { location: 'Bar' })]);
+    renderWithOrg(<MyShiftsPage />, { ...TEST_ORG, offerLeadTimeMin: 240 });
+    await screen.findByText('Bar');
+    expect(screen.getAllByRole('button', { name: 'Offer this shift' })).toHaveLength(1);
   });
 
   it('hides the offer button when an offer is open or start is within 2 hours', async () => {

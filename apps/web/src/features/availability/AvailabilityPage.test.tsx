@@ -55,6 +55,16 @@ describe('AvailabilityPage', () => {
     );
   });
 
+  it('announces added and removed windows', async () => {
+    renderWithOrg(<AvailabilityPage />);
+    await userEvent.type(await screen.findByLabelText('From'), '2026-11-10T09:00');
+    await userEvent.type(screen.getByLabelText('Until'), '2026-11-10T18:00');
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }));
+    expect(await screen.findByText('Unavailable time added.')).toBeVisible();
+    await userEvent.click(await screen.findByRole('button', { name: /Delete/ }));
+    expect(await screen.findByText('Unavailable time removed.')).toBeVisible();
+  });
+
   it('deletes a window', async () => {
     renderWithOrg(<AvailabilityPage />);
     await userEvent.click(await screen.findByRole('button', { name: /Delete/ }));

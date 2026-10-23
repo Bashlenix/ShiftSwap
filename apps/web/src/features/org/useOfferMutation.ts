@@ -14,13 +14,13 @@ export function useOfferMutation<T = unknown>(successNotice: string | null = nul
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const mutation = useMutation({
-    mutationFn: (v: { method: Method; path: string; body?: unknown }) =>
+    mutationFn: (v: { method: Method; path: string; body?: unknown; notice?: string }) =>
       v.body === undefined ? apiSend<T>(v.method, v.path) : apiSend<T>(v.method, v.path, v.body),
     onMutate: () => {
       setError(null);
       setNotice(null);
     },
-    onSuccess: () => setNotice(successNotice),
+    onSuccess: (_data, v) => setNotice(v.notice ?? successNotice),
     onError: (err) => setError(errorMessage(err)),
     onSettled: async () => {
       await Promise.all([

@@ -87,13 +87,20 @@ export function OpenOffersPage() {
                     >
                       Withdraw acceptance
                     </Button>
-                  ) : (
-                    <Button
-                      disabled={mutation.isPending}
-                      onClick={() => run('POST', `/offers/${o.id}/acceptances`)}
-                    >
-                      Accept
-                    </Button>
+                  ) : o.myAcceptanceStatus === 'SELECTED' ? null : (
+                    <div className="flex flex-col items-start gap-1">
+                      {o.myAcceptanceStatus === 'INVALIDATED' && (
+                        <p className="text-sm text-amber-900">
+                          The shift changed — accept again if you still want it.
+                        </p>
+                      )}
+                      <Button
+                        disabled={mutation.isPending}
+                        onClick={() => run('POST', `/offers/${o.id}/acceptances`)}
+                      >
+                        Accept
+                      </Button>
+                    </div>
                   )}
                 </td>
               </tr>

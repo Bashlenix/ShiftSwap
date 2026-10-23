@@ -23,8 +23,16 @@ describe('formatShiftTime', () => {
   });
 
   it('handles the DST switch night (22:00 to 06:00 across 25 Oct)', () => {
-    expect(formatShiftTime('2026-10-25T20:00:00Z', '2026-10-26T05:00:00Z', 'Europe/Berlin')).toBe(
-      'Sun 25 Oct, 21:00–06:00 (+1)',
+    expect(formatShiftTime('2026-10-24T20:00:00Z', '2026-10-25T05:00:00Z', 'Europe/Berlin')).toBe(
+      'Sat 24 Oct, 22:00–06:00 (+1)',
+    );
+  });
+});
+
+describe('formatShiftTime multi-day', () => {
+  it('shows the end date when the end is more than one local day later', () => {
+    expect(formatShiftTime('2026-11-10T08:00:00Z', '2026-11-14T17:00:00Z', 'Europe/Berlin')).toBe(
+      'Tue 10 Nov, 09:00 → Sat 14 Nov, 18:00',
     );
   });
 });

@@ -10,6 +10,7 @@ export const TEST_ORG: OrgInfo = {
   organizationName: 'Café Lindenhof',
   accessLevel: 'EMPLOYEE',
   timezone: 'Europe/Berlin',
+  offerLeadTimeMin: 120,
 };
 
 export function renderWithOrg(ui: ReactElement, org: OrgInfo = TEST_ORG) {

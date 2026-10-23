@@ -10,6 +10,7 @@ export interface Me {
     organizationId: string;
     organizationName: string;
     organizationTimezone: string;
+    offerLeadTimeMin: number;
     accessLevel: AccessLevel;
   }[];
 }

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { OfferSummaryDto, ShiftDto } from '@shiftswap/shared';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Feedback } from '../../components/Feedback';
 import { StatusBadge } from '../../components/StatusBadge';
 import { Button } from '../../components/ui/button';
@@ -18,13 +18,13 @@ import { useOfferMutation } from '../org/useOfferMutation';
 import { useSkillNames } from '../org/useSkillNames';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** Offers cannot be created this close to the start (org default lead time). */
-const OFFER_CUTOFF_MS = 2 * 60 * 60 * 1000;
 
 export function MyShiftsPage() {
   const org = useOrg();
   const skillNames = useSkillNames();
   const { error, notice, mutation } = useOfferMutation();
+  const feedbackRef = useRef<HTMLDivElement>(null);
+  const focusFeedback = useRef(false);
   const [confirming, setConfirming] = useState<ShiftDto | null>(null);
   // Fixed per mount so the query key stays stable across renders.
   const [range] = useState(() => {
@@ -48,11 +48,13 @@ export function MyShiftsPage() {
     );
 
   function offer(shift: ShiftDto) {
+    focusFeedback.current = true;
     setConfirming(null);
     mutation.mutate({
       method: 'POST',
       path: orgApi(org, '/offers'),
       body: { shiftId: shift.id, kind: 'GIVE_AWAY' },
+      notice: 'Shift offered.',
     });
   }
 
@@ -63,7 +65,7 @@ export function MyShiftsPage() {
           My shifts
         </h1>
         <p className="text-sm text-slate-700">Your shifts for the next 14 days.</p>
-        <Feedback error={error} notice={notice} />
+        <Feedback error={error} notice={notice} containerRef={feedbackRef} />
         {shifts.isPending && <p>Loading…</p>}
         {shifts.isError && <p role="alert">Could not load your shifts. Please try again.</p>}
         {shifts.data?.length === 0 && <p>You have no shifts in the next 14 days.</p>}
@@ -95,7 +97,7 @@ export function MyShiftsPage() {
                 const canOffer =
                   s.openOfferId === null &&
                   !own &&
-                  Date.parse(s.startAt) - Date.now() > OFFER_CUTOFF_MS;
+                  Date.now() < Date.parse(s.startAt) - org.offerLeadTimeMin * 60_000;
                 return (
                   <tr key={s.id} className="border-b border-slate-200">
                     <th scope="row" className="p-2 font-medium">
@@ -121,6 +123,7 @@ export function MyShiftsPage() {
                               method: 'POST',
                               path: orgApi(org, `/offers/${own.id}/cancel`),
                               body: { version: own.version },
+                              notice: 'Offer withdrawn.',
                             })
                           }
                         >
@@ -175,9 +178,20 @@ export function MyShiftsPage() {
       </section>
 
       <Dialog open={confirming !== null} onOpenChange={(open) => !open && setConfirming(null)}>
-        <DialogContent>
+        <DialogContent
+          onCloseAutoFocus={(e) => {
+            // After Confirm the trigger is disabled; announce the result instead.
+            if (focusFeedback.current) {
+              e.preventDefault();
+              feedbackRef.current?.focus();
+              focusFeedback.current = false;
+            }
+          }}
+        >
           <DialogTitle>Offer this shift?</DialogTitle>
           <DialogDescription>
+            {confirming &&
+              `${formatShiftTime(confirming.startAt, confirming.endAt, org.timezone)}${confirming.location ? `, ${confirming.location}` : ''}. `}
             Colleagues who are allowed to take it can accept. A manager approves who gets it. The
             shift stays yours until then.
           </DialogDescription>

@@ -83,6 +83,25 @@ describe('OpenOffersPage', () => {
     );
   });
 
+  it('shows Selected as text with no button', async () => {
+    setup([offer('o1', { myAcceptanceStatus: 'SELECTED' })]);
+    renderWithOrg(<OpenOffersPage />);
+    expect(await screen.findByText('Selected')).toBeVisible();
+    expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('lets an invalidated acceptance be re-accepted, with an explanation', async () => {
+    setup([offer('o1', { myAcceptanceStatus: 'INVALIDATED' })]);
+    renderWithOrg(<OpenOffersPage />);
+    expect(
+      await screen.findByText('The shift changed — accept again if you still want it.'),
+    ).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    await waitFor(() =>
+      expect(apiSend).toHaveBeenCalledWith('POST', '/api/v1/orgs/org-1/offers/o1/acceptances'),
+    );
+  });
+
   it('claims an open shift', async () => {
     setup([offer('o2', { kind: 'OPEN_SHIFT', originalOwnerMembershipId: null })]);
     renderWithOrg(<OpenOffersPage />);

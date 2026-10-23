@@ -42,6 +42,7 @@ export function OrgLayout() {
     organizationName: membership.organizationName,
     accessLevel: membership.accessLevel,
     timezone: membership.organizationTimezone,
+    offerLeadTimeMin: membership.offerLeadTimeMin,
   };
   const base = `/orgs/${org.organizationId}`;
 

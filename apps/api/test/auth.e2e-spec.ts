@@ -103,6 +103,7 @@ describe('auth + /me', () => {
         organizationId: a.id,
         organizationName: 'Alpha Cafe',
         organizationTimezone: 'Europe/Berlin',
+        offerLeadTimeMin: 120,
         accessLevel: 'MANAGER',
       },
       {
@@ -110,6 +111,7 @@ describe('auth + /me', () => {
         organizationId: b.id,
         organizationName: 'Zeta Bakery',
         organizationTimezone: 'Europe/Berlin',
+        offerLeadTimeMin: 120,
         accessLevel: 'ADMIN',
       },
     ]);

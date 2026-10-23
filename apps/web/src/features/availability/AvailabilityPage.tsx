@@ -34,6 +34,7 @@ export function AvailabilityPage() {
   const org = useOrg();
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
@@ -47,11 +48,15 @@ export function AvailabilityPage() {
     queryFn: () => apiFetch<UnavailabilityDto[]>(orgApi(org, '/me/unavailability')),
   });
   const write = useMutation({
-    mutationFn: (v: { method: 'POST' | 'DELETE'; path: string; body?: unknown }) =>
+    mutationFn: (v: { method: 'POST' | 'DELETE'; path: string; body?: unknown; notice: string }) =>
       v.body === undefined
         ? apiSend(v.method, orgApi(org, v.path))
         : apiSend(v.method, orgApi(org, v.path), v.body),
-    onMutate: () => setError(null),
+    onMutate: () => {
+      setError(null);
+      setNotice(null);
+    },
+    onSuccess: (_d, v) => setNotice(v.notice),
     onError: (err) => setError(errorMessage(err)),
     onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
   });
@@ -61,6 +66,7 @@ export function AvailabilityPage() {
       {
         method: 'POST',
         path: '/me/unavailability',
+        notice: 'Unavailable time added.',
         body: {
           startAt: localToInstant(values.startAt, org.timezone),
           endAt: localToInstant(values.endAt, org.timezone),
@@ -124,7 +130,7 @@ export function AvailabilityPage() {
       <p className="text-xs text-slate-600">
         Times are in the organisation&apos;s time zone ({org.timezone}).
       </p>
-      <Feedback error={error} />
+      <Feedback error={error} notice={notice} />
       {list.isPending && <p>Loading…</p>}
       {list.isError && <p role="alert">Could not load your unavailable times. Please try again.</p>}
       {list.data?.length === 0 && <p>You have not marked any unavailable times.</p>}
@@ -155,7 +161,11 @@ export function AvailabilityPage() {
                       aria-label={`Delete ${label}`}
                       disabled={write.isPending}
                       onClick={() =>
-                        write.mutate({ method: 'DELETE', path: `/me/unavailability/${u.id}` })
+                        write.mutate({
+                          method: 'DELETE',
+                          path: `/me/unavailability/${u.id}`,
+                          notice: 'Unavailable time removed.',
+                        })
                       }
                     >
                       Delete

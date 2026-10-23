@@ -8,6 +8,7 @@ export interface MeResponse {
   memberships: {
     membershipId: string;
     organizationTimezone: string;
+    offerLeadTimeMin: number;
     organizationId: string;
     organizationName: string;
     accessLevel: 'EMPLOYEE' | 'MANAGER' | 'ADMIN';
@@ -31,6 +32,7 @@ export class MeController {
       memberships: rows.map((m) => ({
         membershipId: m.id,
         organizationTimezone: m.organization.timezone,
+        offerLeadTimeMin: m.organization.offerLeadTimeMin,
         organizationId: m.organizationId,
         organizationName: m.organization.name,
         accessLevel: m.accessLevel,

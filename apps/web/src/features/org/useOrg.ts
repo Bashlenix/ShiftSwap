@@ -8,6 +8,8 @@ export interface OrgInfo {
   accessLevel: AccessLevel;
   /** IANA zone of the organisation; all times are shown in it. */
   timezone: string;
+  /** Offers cannot be created or taken within this many minutes of the shift start. */
+  offerLeadTimeMin: number;
 }
 
 export const OrgContext = createContext<OrgInfo | null>(null);
