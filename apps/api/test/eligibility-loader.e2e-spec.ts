@@ -163,4 +163,101 @@ describe('EligibilityLoader', () => {
     const map = await loader.load(ctx.prisma, org, target(), [m.membershipId]);
     expect(map.get(m.membershipId)!.swapsLast30Days).toBe(1);
   });
+
+  describe('review fixes', () => {
+    const newOffer = async (orgForOffer: string, creatorId: string, startOffsetDays: number) => {
+      const start = new Date(monday.getTime() + startOffsetDays * DAY);
+      const sh = await ctx.prisma.shift.create({
+        data: {
+          organizationId: orgForOffer,
+          startAt: start,
+          endAt: new Date(start.getTime() + H),
+        },
+      });
+      return ctx.prisma.offer.create({
+        data: {
+          organizationId: orgForOffer,
+          shiftId: sh.id,
+          kind: 'GIVE_AWAY',
+          createdByMembershipId: creatorId,
+          expiresAt: new Date(),
+        },
+      });
+    };
+
+    it('maps skills exactly: two skills, none (empty array, not [null])', async () => {
+      const withSkills = await makeMember(ctx, orgId, {
+        accessLevel: 'EMPLOYEE',
+        skillNames: ['sk-a', 'sk-b'],
+      });
+      const without = await makeMember(ctx, orgId, { accessLevel: 'EMPLOYEE' });
+      const skills = await ctx.prisma.skill.findMany({
+        where: { organizationId: orgId, name: { in: ['sk-a', 'sk-b'] } },
+      });
+      const skillA = skills.find((x) => x.name === 'sk-a')!;
+      const map = await loader.load(ctx.prisma, org, target(), [
+        withSkills.membershipId,
+        without.membershipId,
+      ]);
+      const a = map.get(withSkills.membershipId)!;
+      const b = map.get(without.membershipId)!;
+      expect([...a.ctx.candidate.skillIds].sort()).toEqual(skills.map((x) => x.id).sort());
+      expect(b.ctx.candidate.skillIds).toEqual([]);
+
+      const needsA = { ...target(), requiredSkillIds: [skillA.id] };
+      expect(checkEligibility(a.ctx, needsA).failedRules).toEqual([]);
+      expect(checkEligibility(b.ctx, needsA).failedRules).toEqual(['MISSING_SKILL']);
+    });
+
+    it('swap count: only recent SELECTED rows of this org', async () => {
+      const m = await makeMember(ctx, orgId, { accessLevel: 'EMPLOYEE' });
+      const otherOrgId = (await makeOrg(ctx.prisma)).orgId;
+      const foreign = await makeMember(ctx, otherOrgId, { accessLevel: 'EMPLOYEE' });
+      const mkAcc = async (
+        orgForRow: string,
+        memberId: string,
+        status: 'SELECTED' | 'PENDING',
+        offerOffset: number,
+      ) => {
+        const offer = await newOffer(orgForRow, memberId, offerOffset);
+        return ctx.prisma.acceptance.create({
+          data: { organizationId: orgForRow, offerId: offer.id, membershipId: memberId, status },
+        });
+      };
+      await mkAcc(orgId, m.membershipId, 'SELECTED', 40); // recent, counts
+      const old = await mkAcc(orgId, m.membershipId, 'SELECTED', 41);
+      await ctx.prisma
+        .$executeRaw`UPDATE acceptances SET updated_at = now() - interval '31 days' WHERE id = ${old.id}`;
+      await mkAcc(orgId, m.membershipId, 'PENDING', 42);
+      await mkAcc(otherOrgId, foreign.membershipId, 'SELECTED', 43);
+
+      const map = await loader.load(ctx.prisma, org, target(), [m.membershipId]);
+      expect(map.get(m.membershipId)!.swapsLast30Days).toBe(1);
+    });
+
+    it('foreign-org id and empty id list return empty maps', async () => {
+      const otherOrgId = (await makeOrg(ctx.prisma)).orgId;
+      const foreign = await makeMember(ctx, otherOrgId, { accessLevel: 'EMPLOYEE' });
+      expect((await loader.load(ctx.prisma, org, target(), [foreign.membershipId])).size).toBe(0);
+      expect((await loader.load(ctx.prisma, org, target(), [])).size).toBe(0);
+    });
+
+    it('neighbouring-week shift is in candidateShifts but not in weeklyMinutes', async () => {
+      const m = await makeMember(ctx, orgId, { accessLevel: 'EMPLOYEE' });
+      const start = new Date('2030-01-06T18:00:00Z'); // Sunday evening Berlin, previous week
+      await ctx.prisma.shift.create({
+        data: {
+          organizationId: orgId,
+          startAt: start,
+          endAt: new Date(start.getTime() + 2 * H),
+          assignedMembershipId: m.membershipId,
+        },
+      });
+      const e = (await loader.load(ctx.prisma, org, target(), [m.membershipId])).get(
+        m.membershipId,
+      )!;
+      expect(e.ctx.candidateShifts).toHaveLength(1);
+      expect(e.weeklyMinutes).toBe(0);
+    });
+  });
 });
