@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service';
 import type { Prisma } from '../generated/prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 import { lockOffer } from './offer-locks';
 import { assertAcceptanceTransition, assertOfferTransition } from './offer-state';
 import { offerAudit } from './offer-views';
+import { offerPayload } from './offer-notifications';
 
 type Tx = Prisma.TransactionClient;
 
@@ -13,20 +15,27 @@ export interface ShiftChange {
   newStartAt: Date;
 }
 
-/** PENDING -> NOT_SELECTED for every acceptance of the offer; returns the affected ids. */
-export async function closePending(tx: Tx, offerId: string): Promise<string[]> {
+/** PENDING -> NOT_SELECTED for every acceptance of the offer; returns the affected rows. */
+export async function closePendingRows(
+  tx: Tx,
+  offerId: string,
+): Promise<{ id: string; membershipId: string }[]> {
   const pending = await tx.acceptance.findMany({
     where: { offerId, status: 'PENDING' },
-    select: { id: true, status: true },
+    select: { id: true, status: true, membershipId: true },
   });
   if (pending.length === 0) return [];
   for (const a of pending) assertAcceptanceTransition(a.status, 'NOT_SELECTED');
-  const ids = pending.map((a) => a.id);
   await tx.acceptance.updateMany({
-    where: { id: { in: ids }, status: 'PENDING' },
+    where: { id: { in: pending.map((a) => a.id) }, status: 'PENDING' },
     data: { status: 'NOT_SELECTED' },
   });
-  return ids;
+  return pending.map((a) => ({ id: a.id, membershipId: a.membershipId }));
+}
+
+/** PENDING -> NOT_SELECTED for every acceptance of the offer; returns the affected ids. */
+export async function closePending(tx: Tx, offerId: string): Promise<string[]> {
+  return (await closePendingRows(tx, offerId)).map((a) => a.id);
 }
 
 /** The OPEN offer of a shift (at most one: partial unique index), org-scoped plain read. */
@@ -45,7 +54,10 @@ async function openOfferId(tx: Tx, orgId: string, shiftId: string): Promise<stri
  */
 @Injectable()
 export class OfferLifecycle {
-  constructor(private readonly audit: AuditService) {}
+  constructor(
+    private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   /** Lock the shift's OPEN offer (if any) BEFORE the shift row is locked. Returns its id. */
   async lockOpenOfferOf(tx: Tx, orgId: string, shiftId: string): Promise<string | null> {
@@ -92,7 +104,7 @@ export class OfferLifecycle {
     });
     const pending = await tx.acceptance.findMany({
       where: { offerId, status: 'PENDING' },
-      select: { id: true, status: true },
+      select: { id: true, status: true, membershipId: true },
     });
     for (const a of pending) assertAcceptanceTransition(a.status, 'INVALIDATED');
     const invalidated = pending.map((a) => a.id);
@@ -120,6 +132,20 @@ export class OfferLifecycle {
       after: offerAudit(after),
       metadata: { invalidatedAcceptanceIds: invalidated },
     });
+    if (pending.length > 0) {
+      const shift = await tx.shift.findUniqueOrThrow({
+        where: { id: shiftId },
+        select: { startAt: true, endAt: true },
+      });
+      await this.notifications.notify(
+        tx,
+        orgId,
+        pending.map((a) => a.membershipId),
+        'ACCEPTANCE_INVALIDATED',
+        offerPayload(after, shift, 'candidate'),
+        actorMembershipId,
+      );
+    }
   }
 
   async onShiftDeleted(

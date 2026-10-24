@@ -344,6 +344,30 @@ describe('tenancy and permission sweep', () => {
       setup: () => offerReq(() => ({ version: 1 })),
       foreign: [offerB],
     },
+    {
+      route: 'GET orgs/:orgId/notifications',
+      actor: 'employee',
+      expected: 200,
+      managerOnly: false,
+      setup: async () => ({ params: base(), query: '?limit=5' }),
+      foreign: [],
+    },
+    {
+      route: 'GET orgs/:orgId/notifications/unread-count',
+      actor: 'employee',
+      expected: 200,
+      managerOnly: false,
+      setup: async () => ({ params: base() }),
+      foreign: [],
+    },
+    {
+      route: 'POST orgs/:orgId/notifications/read',
+      actor: 'employee',
+      expected: 204,
+      managerOnly: false,
+      setup: async () => ({ params: base(), body: {} }),
+      foreign: [],
+    },
   ];
 
   beforeAll(async () => {

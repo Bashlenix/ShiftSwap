@@ -7,6 +7,7 @@ import { AuditModule } from './audit/audit.module';
 import { DirectoryModule } from './directory/directory.module';
 import { AvailabilityModule } from './availability/availability.module';
 import { ShiftsModule } from './shifts/shifts.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { OffersModule } from './offers/offers.module';
 import { OrgsModule } from './orgs/orgs.module';
 import { MeController } from './me/me.controller';
@@ -47,6 +48,7 @@ export class AppModule {
         ShiftsModule,
         AvailabilityModule,
         OffersModule,
+        NotificationsModule,
         OrgsModule,
         // Offer expiry scheduler (SDD §25); tests drive OffersService.expireDue directly.
         ...(env.NODE_ENV === 'test' ? [] : [ScheduleModule.forRoot()]),
