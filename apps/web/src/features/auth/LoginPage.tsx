@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/ca
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { authClient } from '../../lib/auth-client';
+import { refreshSession } from '../../lib/session';
 import { safeNext, withNext } from '../../lib/safe-next';
 
 const WRONG_CREDENTIALS = 'Email or password is incorrect.';
@@ -42,6 +43,7 @@ export function LoginPage() {
         setFormError(messageFor(error.status));
         return;
       }
+      await refreshSession();
       await navigate(next);
     } catch {
       setFormError(GENERIC_FAILURE);

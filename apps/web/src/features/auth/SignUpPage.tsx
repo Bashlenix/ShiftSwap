@@ -8,6 +8,7 @@ import { Label } from '../../components/ui/label';
 import { authClient } from '../../lib/auth-client';
 import { PASSWORD_ERROR, PASSWORD_HINT } from '../../lib/password-copy';
 import { safeNext, withNext } from '../../lib/safe-next';
+import { refreshSession } from '../../lib/session';
 import { isAlreadyRegistered } from '../../lib/sign-up-error';
 
 const GENERIC_FAILURE = 'Something went wrong. Please try again.';
@@ -66,6 +67,7 @@ export function SignUpPage() {
         );
         return;
       }
+      await refreshSession();
       await navigate(next);
     } catch {
       setFormError(GENERIC_FAILURE);

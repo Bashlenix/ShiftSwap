@@ -12,6 +12,7 @@ import { authClient } from '../../lib/auth-client';
 import { errorMessage } from '../../lib/error-messages';
 import { PASSWORD_ERROR, PASSWORD_HINT } from '../../lib/password-copy';
 import { withNext } from '../../lib/safe-next';
+import { refreshSession } from '../../lib/session';
 import { isAlreadyRegistered } from '../../lib/sign-up-error';
 
 const GENERIC_FAILURE = 'Something went wrong. Please try again.';
@@ -153,6 +154,7 @@ function ValidInvite({ invite, token }: { invite: InvitePreviewDto; token: strin
         setBusy(false);
         return;
       }
+      await refreshSession();
     } catch {
       setError(GENERIC_FAILURE);
       inFlight.current = false;

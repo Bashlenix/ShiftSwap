@@ -16,6 +16,8 @@ vi.mock('../../lib/api', async (orig) => ({
 const useSession = vi.hoisted(() => vi.fn());
 const signUpEmail = vi.hoisted(() => vi.fn());
 const signOut = vi.hoisted(() => vi.fn());
+// The real refresh reads the Better Auth store; LoginRedirect.test.tsx covers it end to end.
+vi.mock('../../lib/session', () => ({ refreshSession: vi.fn(async () => {}) }));
 vi.mock('../../lib/auth-client', () => ({
   authClient: { useSession, signUp: { email: signUpEmail }, signOut },
 }));
