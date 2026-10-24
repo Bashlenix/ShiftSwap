@@ -157,4 +157,51 @@ describe('skills catalogue (FR-03)', () => {
     expect(audit).not.toBeNull();
     expect((await api(app, admin.cookie).delete(url(`/${skill.id}`))).status).toBe(404);
   });
+
+  it('deleting a skill while a shift PATCH adds it: never 500 (x5)', async () => {
+    for (let i = 0; i < 5; i++) {
+      const skill = (await create(`Race Shift ${n++}`)).body;
+      const shift = await ctx.prisma.shift.create({
+        data: {
+          organizationId: orgId,
+          startAt: new Date(Date.now() + (20 + i) * day),
+          endAt: new Date(Date.now() + (20 + i) * day + 4 * hour),
+        },
+      });
+      const [patch, del] = await Promise.all([
+        api(app, manager.cookie)
+          .patch(`/api/v1/orgs/${orgId}/shifts/${shift.id}`)
+          .send({ version: 1, requiredSkillIds: [skill.id] }),
+        new Promise((r) => setTimeout(r, i * 3)).then(() =>
+          api(app, admin.cookie).delete(url(`/${skill.id}`)),
+        ),
+      ]);
+      if (del.status === 204) {
+        expect(patch.status).toBe(404);
+        expect(await ctx.prisma.shiftSkill.count({ where: { shiftId: shift.id } })).toBe(0);
+      } else {
+        expect(patch.status).toBe(200);
+        expect(del.status).toBe(409);
+        expect(del.body.error).toMatchObject({ code: 'SKILL_IN_USE', details: { shiftCount: 1 } });
+      }
+    }
+  });
+
+  it('deleting a skill while a member PATCH adds it: never 500 (x5)', async () => {
+    for (let i = 0; i < 5; i++) {
+      const skill = (await create(`Race Member ${n++}`)).body;
+      const [patch, del] = await Promise.all([
+        api(app, manager.cookie)
+          .patch(`/api/v1/orgs/${orgId}/members/${employee.membershipId}`)
+          .send({ skillIds: [skill.id] }),
+        new Promise((r) => setTimeout(r, i * 3)).then(() =>
+          api(app, admin.cookie).delete(url(`/${skill.id}`)),
+        ),
+      ]);
+      // Member skills never block a delete; the join row cascades either way.
+      expect(del.status).toBe(204);
+      expect([200, 404]).toContain(patch.status);
+      expect(await ctx.prisma.membershipSkill.count({ where: { skillId: skill.id } })).toBe(0);
+    }
+  });
 });

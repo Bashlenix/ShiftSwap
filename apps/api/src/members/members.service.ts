@@ -15,6 +15,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import type { OrgContext } from '../tenancy/org-context.decorator';
 import { lockMembership } from '../offers/offer-locks';
 import { lockMemberAndAdmins, lockOpenInvites } from './admin-locks';
+import { lockSkills } from '../skills/skill-locks';
 import { buildInviteMail } from './invite-mail';
 import { INVITE_TTL_MS, inviteLink, newInviteToken } from './invite-token';
 
@@ -36,8 +37,6 @@ export const toMemberDto = (m: MemberRow, invitePending: boolean): MemberDto => 
   skillIds: m.skills.map((s) => s.skillId),
   weeklyLimitMin: m.weeklyLimitMin,
 });
-
-const notFound = () => new DomainError('NOT_FOUND', 'Not found');
 
 @Injectable()
 export class MembersService {
@@ -90,7 +89,7 @@ export class MembersService {
           );
         }
       }
-      await this.assertSkills(tx, org.orgId, input.skillIds);
+      await lockSkills(tx, org.orgId, input.skillIds);
       const member = await tx.membership.create({
         data: {
           organizationId: org.orgId,
@@ -147,7 +146,7 @@ export class MembersService {
         await lockMembership(tx, org.orgId, membershipId);
         current = await tx.membership.findUniqueOrThrow({ where: { id: membershipId } });
       }
-      if (input.skillIds) await this.assertSkills(tx, org.orgId, input.skillIds);
+      if (input.skillIds) await lockSkills(tx, org.orgId, input.skillIds);
 
       const updated = await tx.membership.update({
         where: { id: membershipId },
@@ -213,13 +212,6 @@ export class MembersService {
       const link = await this.issueInvite(tx, after, org, membershipId, m.email, input.appOrigin);
       return { inviteLink: link };
     });
-  }
-
-  private async assertSkills(tx: Tx, orgId: string, skillIds: string[]): Promise<void> {
-    const unique = [...new Set(skillIds)];
-    if (unique.length === 0) return;
-    const found = await tx.skill.count({ where: { id: { in: unique }, organizationId: orgId } });
-    if (found !== unique.length) throw notFound();
   }
 
   /** Creates the invite row, audits it and queues the mail. Never logs or audits the token. */

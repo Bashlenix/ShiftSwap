@@ -397,6 +397,41 @@ describe('shifts API', () => {
     expect(after).toMatchObject({ assignedMembershipId: null, version: 1 });
   });
 
+  it("a deactivated member's in-progress shift: notes edit ok, moving it into the future -> 409", async () => {
+    const gone = await makeMember(ctx, orgId, { accessLevel: 'EMPLOYEE' });
+    await ctx.prisma.membership.update({
+      where: { id: gone.membershipId },
+      data: { status: 'DEACTIVATED' },
+    });
+    const running = await ctx.prisma.shift.create({
+      data: {
+        organizationId: orgId,
+        assignedMembershipId: gone.membershipId,
+        startAt: new Date(Date.now() - 3600_000),
+        endAt: new Date(Date.now() + 3600_000),
+      },
+    });
+    const notes = await api(app, manager.cookie)
+      .patch(url(`/${running.id}`))
+      .send({ version: 1, notes: 'Handover done' });
+    expect(notes.status).toBe(200);
+
+    const moved = await api(app, manager.cookie)
+      .patch(url(`/${running.id}`))
+      .send({
+        version: 2,
+        startAt: iso('2027-06-01T08:00:00Z'),
+        endAt: iso('2027-06-01T12:00:00Z'),
+      });
+    expect(moved.status).toBe(409);
+    expect(moved.body.error).toMatchObject({
+      code: 'INVALID_TRANSITION',
+      message: 'This person is deactivated.',
+    });
+    const after = await ctx.prisma.shift.findUniqueOrThrow({ where: { id: running.id } });
+    expect(after).toMatchObject({ version: 2, startAt: running.startAt });
+  });
+
   it('writes one audit row per write, scheduling fields only', async () => {
     const rows = await ctx.prisma.auditLog.findMany({
       where: { organizationId: orgId, entityType: 'shift' },

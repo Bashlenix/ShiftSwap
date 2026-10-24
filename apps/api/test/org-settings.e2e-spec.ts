@@ -123,9 +123,9 @@ describe('organisation settings (FR-04)', () => {
       entityType: 'organization',
       entityId: o.orgId,
       actorMembershipId: o.admin.membershipId,
-      before: { minRestMin: 660 },
-      after: { minRestMin: 720 },
     });
+    expect(audits[0].before).toEqual({ minRestMin: 660 });
+    expect(audits[0].after).toEqual({ minRestMin: 720 });
   });
 
   it('raising the lead time 120 -> 600 moves expires_at of OPEN offers only', async () => {
