@@ -175,6 +175,23 @@ describe('members API (FR-02, FR-03)', () => {
     expect(res.body.error.code).toBe('VALIDATION_FAILED');
   });
 
+  it('status=deactivated lists only deactivated members; ?status=foo is 400', async () => {
+    const { orgId: o } = await makeOrg(ctx.prisma);
+    const m = await makeMember(ctx, o, { accessLevel: 'MANAGER', name: 'Zed' });
+    const base = `/api/v1/orgs/${o}/members`;
+    const gone = await api(app, m.cookie).post(base).send({ displayName: 'Abe' });
+    await ctx.prisma.membership.update({
+      where: { id: gone.body.member.id },
+      data: { status: 'DEACTIVATED' },
+    });
+    const res = await api(app, m.cookie).get(`${base}?status=deactivated`);
+    expect(res.status).toBe(200);
+    expect(res.body.map((x: { displayName: string }) => x.displayName)).toEqual(['Abe']);
+    const bad = await api(app, m.cookie).get(`${base}?status=foo`);
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.code).toBe('VALIDATION_FAILED');
+  });
+
   it('lists members sorted by name with invitePending; status filter', async () => {
     const { orgId: o } = await makeOrg(ctx.prisma);
     const m = await makeMember(ctx, o, { accessLevel: 'MANAGER', name: 'Zed' });
@@ -230,6 +247,29 @@ describe('members API (FR-02, FR-03)', () => {
       expect(
         await ctx.prisma.auditLog.count({ where: { action: 'member.updated', entityId: id } }),
       ).toBe(1);
+    });
+
+    it('a PATCH that changes nothing writes no audit row', async () => {
+      const sk = await ctx.prisma.skill.create({
+        data: { organizationId: orgId, name: `S3-${n++}` },
+      });
+      const c = await api(app, manager.cookie)
+        .post(url())
+        .send({ displayName: 'Same', weeklyLimitMin: 600, skillIds: [sk.id] });
+      const id = c.body.member.id;
+      const res = await api(app, manager.cookie)
+        .patch(url(`/${id}`))
+        .send({
+          displayName: 'Same',
+          accessLevel: c.body.member.accessLevel,
+          weeklyLimitMin: 600,
+          skillIds: [sk.id],
+        });
+      expect(res.status).toBe(200);
+      expect(res.body.displayName).toBe('Same');
+      expect(
+        await ctx.prisma.auditLog.count({ where: { action: 'member.updated', entityId: id } }),
+      ).toBe(0);
     });
 
     it('foreign skill or foreign membership -> 404; skills unchanged on failure', async () => {
@@ -412,6 +452,32 @@ describe('members API (FR-02, FR-03)', () => {
         expect(invites).toHaveLength(2);
         expect(invites[0].revokedAt).not.toBeNull();
         expect(invites[1]).toMatchObject({ revokedAt: null, email: addr.toLowerCase() });
+      });
+
+      it('audits an email change as member.updated with the field name only, never the address', async () => {
+        const c = await api(app, manager.cookie)
+          .post(url())
+          .send({ displayName: 'Audited', email: email() });
+        const id = c.body.member.id;
+        const addr = email();
+        await api(app, manager.cookie)
+          .post(url(`/${id}/invite`))
+          .send({ email: addr });
+        const rows = await ctx.prisma.auditLog.findMany({
+          where: { action: 'member.updated', entityId: id },
+        });
+        expect(rows).toHaveLength(1);
+        expect(rows[0].after).toEqual({ fields: ['email'] });
+        expect(
+          JSON.stringify(rows[0], (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v)),
+        ).not.toContain(addr.toLowerCase());
+        // resending to the same address changes nothing -> no further row
+        await api(app, manager.cookie)
+          .post(url(`/${id}/invite`))
+          .send({});
+        expect(
+          await ctx.prisma.auditLog.count({ where: { action: 'member.updated', entityId: id } }),
+        ).toBe(1);
       });
 
       it('409 ALREADY_MEMBER when another member has the address; nothing changes', async () => {
