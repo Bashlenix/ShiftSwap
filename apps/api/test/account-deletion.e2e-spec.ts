@@ -458,6 +458,7 @@ describe('DELETE /api/v1/me (account deletion, FR-23, SDD §27/§35)', () => {
       ).toBe(0);
     });
 
+    // 8 rounds of 3 password sign-ups each: slower than jest's 5 s default on CI runners.
     it('concurrent accept and delete never leave an ACTIVE membership or a real email on a deleted user', async () => {
       for (let i = 0; i < 8; i++) {
         const { u, authUser, token } = await setup();
@@ -477,7 +478,7 @@ describe('DELETE /api/v1/me (account deletion, FR-23, SDD §27/§35)', () => {
           }
         }
       }
-    });
+    }, 30_000);
   });
 
   it('401 for a session of a deleted user (a sign-in that raced the deletion)', async () => {
