@@ -5,3 +5,4 @@ export * from './shifts';
 export * from './acceptances';
 export * from './people';
 export * from './notifications';
+export * from './preferences';
