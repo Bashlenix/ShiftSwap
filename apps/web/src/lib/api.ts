@@ -34,7 +34,7 @@ export async function apiFetch<T>(path: string): Promise<T> {
 }
 
 export async function apiSend<T>(
-  method: 'POST' | 'PATCH' | 'DELETE',
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   body?: unknown,
 ): Promise<T> {

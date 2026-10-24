@@ -11,6 +11,7 @@ import { apiFetch, apiSend } from '../../lib/api';
 import { errorMessage } from '../../lib/error-messages';
 import { formatShiftTime, localToInstant } from '../../lib/format';
 import { orgApi, useOrg } from '../org/useOrg';
+import { PreferenceGrid } from './PreferenceGrid';
 
 interface UnavailabilityDto {
   id: string;
@@ -177,6 +178,7 @@ export function AvailabilityPage() {
           </tbody>
         </table>
       )}
+      <PreferenceGrid />
     </section>
   );
 }
