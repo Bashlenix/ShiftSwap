@@ -390,6 +390,26 @@ describe('DELETE /api/v1/me (account deletion, FR-23, SDD §27/§35)', () => {
     });
   });
 
+  it('401 for a session of a deleted user (a sign-in that raced the deletion)', async () => {
+    const { orgId } = await makeOrg(ctx.prisma);
+    await makeMember(ctx, orgId, { accessLevel: 'ADMIN' });
+    const m = await makeMember(ctx, orgId, { accessLevel: 'EMPLOYEE' });
+    expect((await deleteMe(m.cookie)).status).toBe(204);
+    // The racing sign-in created its session row after the deletion committed.
+    const fresh = await makeMember(ctx, orgId, { accessLevel: 'EMPLOYEE' });
+    await ctx.prisma.session.updateMany({
+      where: { userId: fresh.userId! },
+      data: { userId: m.userId! },
+    });
+
+    const me = await api(app, fresh.cookie).get('/api/v1/me');
+    expect(me.status).toBe(401);
+    expect(me.body.error.code).toBe('UNAUTHENTICATED');
+    expect((await api(app, fresh.cookie).get(`/api/v1/orgs/${orgId}`)).status).toBe(401);
+    const created = await api(app, fresh.cookie).post('/api/v1/orgs').send({ name: 'Ghost Org' });
+    expect(created.status).toBe(401);
+  });
+
   it('400 for a missing or wrong confirmation, 401 without a session', async () => {
     const { orgId } = await makeOrg(ctx.prisma);
     const m = await makeMember(ctx, orgId, { accessLevel: 'EMPLOYEE' });

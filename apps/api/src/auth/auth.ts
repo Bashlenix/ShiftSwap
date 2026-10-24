@@ -26,6 +26,13 @@ export function createAuth(prisma: PrismaClient, env: NodeJS.ProcessEnv = proces
     logger: { level: env.NODE_ENV === 'test' ? 'error' : 'warn' },
     emailAndPassword: { enabled: true, requireEmailVerification: false, minPasswordLength: 8 },
     session: { expiresIn: 60 * 60 * 24 * 7 },
+    // Read-only (never settable by sign-up/update); getSession returns it so SessionGuard can
+    // reject a session that a sign-in created while the account was being deleted.
+    user: {
+      additionalFields: {
+        deletedAt: { type: 'date', required: false, input: false },
+      },
+    },
     // Off by default outside production; keep it on (library defaults: sign-in 3 per 10s per IP).
     rateLimit: { enabled: true },
     advanced: {
