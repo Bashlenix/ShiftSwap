@@ -89,13 +89,18 @@ export class DeactivationService {
       await lockMembership(tx, org.orgId, membershipId);
       const m = await tx.membership.findUniqueOrThrow({
         where: { id: membershipId },
-        include: { user: { select: { email: true } } },
+        include: { user: { select: { email: true, deletedAt: true } } },
       });
       if (m.accessLevel === 'ADMIN' && org.accessLevel !== 'ADMIN') {
         throw new DomainError('FORBIDDEN', 'Only an admin can reactivate an admin');
       }
       if (m.status !== 'DEACTIVATED') {
         throw new DomainError('INVALID_TRANSITION', 'Only deactivated members can be reactivated');
+      }
+      // Account deletion (FR-23) is final. Under the membership lock, which the anonymise
+      // transaction also takes, so it cannot interleave with a deletion.
+      if (m.user?.deletedAt) {
+        throw new DomainError('INVALID_TRANSITION', 'This account has been deleted');
       }
       const emails = [
         ...new Set(

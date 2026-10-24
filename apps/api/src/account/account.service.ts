@@ -77,9 +77,14 @@ export class AccountService {
         await tx.$queryRaw`
           SELECT id FROM "invites" WHERE membership_id = ANY(${ids}::text[])
            ORDER BY id FOR UPDATE`;
-        await tx.$queryRaw`
-          SELECT id FROM "memberships" WHERE id = ANY(${ids}::text[])
+        const locked = await tx.$queryRaw<{ status: string }[]>`
+          SELECT status FROM "memberships" WHERE id = ANY(${ids}::text[])
            ORDER BY id FOR NO KEY UPDATE`;
+        // A reactivation that committed after the deactivations would leave an ACTIVE membership
+        // on a deleted user: abort untouched; a retry deactivates it first.
+        if (locked.some((r) => r.status === 'ACTIVE')) {
+          throw new DomainError('VERSION_CONFLICT', 'A membership was changed by someone else');
+        }
         await tx.invite.updateMany({
           where: { membershipId: { in: ids } },
           data: { email: tombstone },

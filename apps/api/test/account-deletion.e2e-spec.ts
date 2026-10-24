@@ -1,4 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
+import { AccountModule } from '../src/account/account.module';
+import { DeactivationService } from '../src/members/deactivation.service';
 import { api, createTestApp, makeMember, makeOrg, type TestCtx } from './helpers/test-app';
 
 type Member = { membershipId: string; userId?: string; cookie?: string };
@@ -214,6 +216,52 @@ describe('DELETE /api/v1/me (account deletion, FR-23, SDD §27/§35)', () => {
     for (const r of rows) {
       expect(r).toMatchObject({ status: 'DEACTIVATED', displayName: 'Deleted user', email: null });
     }
+  });
+
+  it('409 INVALID_TRANSITION when an admin reactivates the membership of a deleted user', async () => {
+    const { orgId } = await makeOrg(ctx.prisma);
+    const admin = await makeMember(ctx, orgId, { accessLevel: 'ADMIN' });
+    const ghost = await makeMember(ctx, orgId, { accessLevel: 'ADMIN' });
+    expect((await deleteMe(ghost.cookie)).status).toBe(204);
+
+    const res = await api(app, admin.cookie).post(
+      `/api/v1/orgs/${orgId}/members/${ghost.membershipId}/reactivate`,
+    );
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('INVALID_TRANSITION');
+    const m = await ctx.prisma.membership.findUniqueOrThrow({
+      where: { id: ghost.membershipId },
+    });
+    expect(m.status).toBe('DEACTIVATED');
+  });
+
+  it('409 VERSION_CONFLICT without anonymising when a membership is reactivated mid-deletion', async () => {
+    const { orgId } = await makeOrg(ctx.prisma);
+    await makeMember(ctx, orgId, { accessLevel: 'ADMIN' });
+    const m = await makeMember(ctx, orgId, { accessLevel: 'EMPLOYEE' });
+    const userBefore = await ctx.prisma.user.findUniqueOrThrow({ where: { id: m.userId! } });
+    // Simulates a reactivation committing between the deactivations and the final transaction.
+    const deactivation = app.select(AccountModule).get(DeactivationService);
+    const real = deactivation.deactivate.bind(deactivation);
+    const spy = jest.spyOn(deactivation, 'deactivate').mockImplementation(async (...args) => {
+      const result = await real(...args);
+      await ctx.prisma.membership.update({ where: { id: args[1] }, data: { status: 'ACTIVE' } });
+      return result;
+    });
+    try {
+      const res = await deleteMe(m.cookie);
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe('VERSION_CONFLICT');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await ctx.prisma.user.findUniqueOrThrow({ where: { id: m.userId! } })).toEqual(
+      userBefore,
+    );
+    expect(await ctx.prisma.session.count({ where: { userId: m.userId! } })).toBeGreaterThan(0);
+
+    // A retry deactivates the membership again and completes.
+    expect((await deleteMe(m.cookie)).status).toBe(204);
   });
 
   it('400 for a missing or wrong confirmation, 401 without a session', async () => {
