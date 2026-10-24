@@ -57,9 +57,15 @@ export function PreferenceGrid() {
   const save = useMutation({
     mutationFn: (entries: PreferenceEntry[]) =>
       apiSend<PreferenceGridDto>('PUT', orgApi(org, '/me/preferences'), { entries }),
-    onSuccess: (dto) => {
+    onSuccess: (dto, sent) => {
       queryClient.setQueryData(key, dto);
-      setOverrides({});
+      // Clear only the choices that were sent; later edits made during the PUT stay.
+      const sentMap = toMap(sent);
+      setOverrides((prev) =>
+        Object.fromEntries(
+          Object.entries(prev).filter(([k, v]) => v !== (sentMap[k] ?? 'NEUTRAL')),
+        ),
+      );
       setNotice('Preferences saved.');
       void queryClient.invalidateQueries({ queryKey: key });
     },
@@ -106,9 +112,13 @@ export function PreferenceGrid() {
           <caption className="sr-only">Weekly shift preferences</caption>
           <thead>
             <tr className="border-b border-slate-300">
-              <td className="w-20 p-1" />
+              <td className="w-[60px] p-0" />
               {PREFERENCE_SLOTS.map((slot) => (
-                <th key={slot} scope="col" className="p-1 text-xs font-semibold">
+                <th
+                  key={slot}
+                  scope="col"
+                  className="p-0.5 text-[11px] leading-tight font-semibold"
+                >
                   {SLOT_HEADERS[slot]}
                 </th>
               ))}
@@ -117,7 +127,7 @@ export function PreferenceGrid() {
           <tbody>
             {DAYS.map((day, weekday) => (
               <tr key={day} className="border-b border-slate-200 align-top">
-                <th scope="row" className="p-1 text-xs font-medium">
+                <th scope="row" className="p-0.5 text-[11px] font-medium">
                   {day}
                 </th>
                 {PREFERENCE_SLOTS.map((slot) => (
@@ -127,12 +137,12 @@ export function PreferenceGrid() {
                       {CHOICES.map((c) => (
                         <label
                           key={c.value}
-                          className="flex min-h-11 min-w-11 cursor-pointer items-center gap-1 px-1 text-xs"
+                          className="flex min-h-11 cursor-pointer items-center gap-0.5 px-0.5 text-[11px]"
                         >
                           <input
                             type="radio"
                             name={`pref-${weekday}-${slot}`}
-                            className="h-5 w-5 shrink-0"
+                            className="m-0 h-4 w-4 shrink-0"
                             checked={current(weekday, slot) === c.value}
                             onChange={() => choose(weekday, slot, c.value)}
                           />

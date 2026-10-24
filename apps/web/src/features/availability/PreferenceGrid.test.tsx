@@ -114,4 +114,25 @@ describe('PreferenceGrid', () => {
     await screen.findByRole('status');
     expect(apiSend).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps a choice made while the save is in flight', async () => {
+    let release: (v: unknown) => void = () => {};
+    apiSend.mockReturnValue(new Promise((r) => (release = r)));
+    renderWithOrg(<PreferenceGrid />);
+    await waitFor(() => expect(radio('Tuesday afternoon', 'Preferred')).toBeChecked());
+    await userEvent.click(radio('Monday morning', 'Avoid'));
+    await userEvent.click(screen.getByRole('button', { name: 'Save preferences' }));
+    await userEvent.click(radio('Friday evening', 'Preferred'));
+    const saved = {
+      entries: [
+        { weekday: 0, slot: 'MORNING', value: 'AVOID' },
+        { weekday: 1, slot: 'AFTERNOON', value: 'PREFERRED' },
+      ],
+    };
+    apiFetch.mockResolvedValue(saved);
+    release(saved);
+    await screen.findByRole('status');
+    expect(radio('Friday evening', 'Preferred')).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Save preferences' })).toBeEnabled();
+  });
 });
