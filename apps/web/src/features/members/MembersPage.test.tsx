@@ -86,6 +86,58 @@ describe('MembersPage', () => {
     expect(within(row).queryByRole('button', { name: /Deactivate/ })).not.toBeInTheDocument();
   });
 
+  const bodyNames = () =>
+    screen
+      .getAllByRole('row')
+      .slice(1)
+      .map((r) => (within(r).getAllByRole('rowheader')[0]?.textContent ?? '').slice(0, 5));
+
+  it('filters rows by search and updates the count', async () => {
+    setup();
+    await screen.findByRole('table');
+    expect(screen.getByRole('status')).toHaveTextContent('Showing 4 of 4 members');
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search members' }), 'barista');
+    expect(screen.getByRole('status')).toHaveTextContent('Showing 3 of 4 members');
+    expect(screen.queryByText('Tom Placeholder')).not.toBeInTheDocument();
+    expect(screen.getByText('Anna Beck')).toBeVisible();
+  });
+
+  it('shows one row when nothing matches', async () => {
+    setup();
+    await screen.findByRole('table');
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search members' }), 'zzz');
+    expect(screen.getByText('No members match "zzz".')).toBeVisible();
+    expect(screen.getByRole('status')).toHaveTextContent('Showing 0 of 4 members');
+  });
+
+  it('sorts by a column button and toggles direction', async () => {
+    apiFetch.mockImplementation((path: string) =>
+      Promise.resolve(
+        path.includes('/skills')
+          ? [{ id: 'sk1', name: 'Barista' }]
+          : [
+              m('mem-1', 'Maria Self', { weeklyLimitMin: 600 }),
+              m('m2', 'Anna Beck', { weeklyLimitMin: 1200 }),
+              m('m3', 'Ben Null'),
+            ],
+      ),
+    );
+    renderWithOrg(<MembersPage />, MANAGER_ORG);
+    await screen.findByRole('table');
+    const header = (n: string) => screen.getByRole('columnheader', { name: n });
+    expect(header('Name')).toHaveAttribute('aria-sort', 'ascending');
+    expect(header('Weekly limit')).toHaveAttribute('aria-sort', 'none');
+    expect(bodyNames()).toEqual(['Anna ', 'Ben N', 'Maria']);
+    const button = within(header('Weekly limit')).getByRole('button', { name: 'Weekly limit' });
+    await userEvent.click(button);
+    expect(header('Weekly limit')).toHaveAttribute('aria-sort', 'ascending');
+    expect(header('Name')).toHaveAttribute('aria-sort', 'none');
+    expect(bodyNames()).toEqual(['Maria', 'Anna ', 'Ben N']);
+    await userEvent.click(button);
+    expect(header('Weekly limit')).toHaveAttribute('aria-sort', 'descending');
+    expect(bodyNames()).toEqual(['Anna ', 'Maria', 'Ben N']);
+  });
+
   it('offers the right row actions', async () => {
     setup();
     await screen.findByRole('table');

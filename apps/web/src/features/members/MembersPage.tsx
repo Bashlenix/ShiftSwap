@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import type { AccessLevel, DeactivationResult, MemberDto, SkillDto } from '@shiftswap/shared';
+import type { DeactivationResult, MemberDto, SkillDto } from '@shiftswap/shared';
 import { useRef, useState } from 'react';
 import { Feedback } from '../../components/Feedback';
 import { Button } from '../../components/ui/button';
@@ -11,32 +11,46 @@ import { useSkillNames } from '../org/useSkillNames';
 import { InviteDialog } from './InviteDialog';
 import { InviteResult } from './InviteResult';
 import { MemberDialog, type MemberDialogResult } from './MemberDialog';
+import {
+  ACCESS_LABEL,
+  filterMembers,
+  memberStatus,
+  type MemberStatus,
+  sortMembers,
+  type MemberSortKey,
+  type SortDir,
+} from './member-table';
 
-const ACCESS_LABEL: Record<AccessLevel, string> = {
-  EMPLOYEE: 'Employee',
-  MANAGER: 'Manager',
-  ADMIN: 'Admin',
-};
+const COLUMNS: { key: MemberSortKey; label: string }[] = [
+  { key: 'name', label: 'Name' },
+  { key: 'access', label: 'Access' },
+  { key: 'skills', label: 'Skills' },
+  { key: 'weeklyLimit', label: 'Weekly limit' },
+  { key: 'status', label: 'Status' },
+];
 
 type Badge = { label: string; symbol: string; tone: string };
 
-function badgeFor(m: MemberDto): Badge {
-  if (m.status === 'DEACTIVATED')
-    return {
-      label: 'Deactivated',
-      symbol: '–',
-      tone: 'border-slate-300 bg-slate-50 text-slate-800',
-    };
-  if (m.invitePending)
-    return {
-      label: 'Invite pending',
-      symbol: '…',
-      tone: 'border-amber-300 bg-amber-50 text-amber-900',
-    };
-  if (!m.hasLogin)
-    return { label: 'No login', symbol: '○', tone: 'border-slate-300 bg-slate-50 text-slate-800' };
-  return { label: 'Active', symbol: '✓', tone: 'border-green-300 bg-green-50 text-green-900' };
-}
+const BADGES: Record<MemberStatus, Badge> = {
+  Deactivated: {
+    label: 'Deactivated',
+    symbol: '–',
+    tone: 'border-slate-300 bg-slate-50 text-slate-800',
+  },
+  'Invite pending': {
+    label: 'Invite pending',
+    symbol: '…',
+    tone: 'border-amber-300 bg-amber-50 text-amber-900',
+  },
+  'No login': {
+    label: 'No login',
+    symbol: '○',
+    tone: 'border-slate-300 bg-slate-50 text-slate-800',
+  },
+  Active: { label: 'Active', symbol: '✓', tone: 'border-green-300 bg-green-50 text-green-900' },
+};
+
+const badgeFor = (m: MemberDto): Badge => BADGES[memberStatus(m)];
 
 const hoursText = (min: number | null) =>
   min === null ? 'Org default' : `${Math.round(min / 6) / 10} h`;
@@ -59,6 +73,11 @@ function MembersTable() {
   const queryClient = useQueryClient();
   const skillNames = useSkillNames();
   const [showAll, setShowAll] = useState(false);
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<{ key: MemberSortKey; dir: SortDir }>({
+    key: 'name',
+    dir: 'asc',
+  });
   const [dialog, setDialog] = useState<{ member: MemberDto | null } | null>(null);
   const [confirming, setConfirming] = useState<MemberDto | null>(null);
   const [inviting, setInviting] = useState<MemberDto | null>(null);
@@ -81,6 +100,16 @@ function MembersTable() {
     queryFn: () => apiFetch<SkillDto[]>(orgApi(org, '/skills')),
     staleTime: 5 * 60_000,
   });
+
+  const skillLabel = (id: string) => skillNames([id]);
+  // At most 100 members, so no memoisation.
+  const rows = members.data
+    ? sortMembers(filterMembers(members.data, query, skillLabel), sort.key, sort.dir, skillLabel)
+    : [];
+
+  function toggleSort(key: MemberSortKey) {
+    setSort((s) => ({ key, dir: s.key === key && s.dir === 'asc' ? 'desc' : 'asc' }));
+  }
 
   const refresh = () =>
     Promise.all([
@@ -208,6 +237,22 @@ function MembersTable() {
       {members.isError && <p role="alert">Could not load the members. Please try again.</p>}
       {members.isPending && <p>Loading…</p>}
       {members.data && (
+        <div>
+          <label className="flex flex-col gap-1 text-sm">
+            Search members
+            <input
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="h-9 max-w-sm rounded-md border border-slate-400 px-3"
+            />
+          </label>
+          <p role="status" className="py-2 text-sm text-slate-700">
+            Showing {rows.length} of {members.data.length} members
+          </p>
+        </div>
+      )}
+      {members.data && (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[44rem] border-collapse text-left text-sm">
             <caption className="pb-2 text-left font-medium">
@@ -215,9 +260,22 @@ function MembersTable() {
             </caption>
             <thead>
               <tr className="border-b border-slate-300">
-                {['Name', 'Access', 'Skills', 'Weekly limit', 'Status'].map((h) => (
-                  <th key={h} scope="col" className="p-2">
-                    {h}
+                {COLUMNS.map((c) => (
+                  <th
+                    key={c.key}
+                    scope="col"
+                    className="p-2"
+                    aria-sort={
+                      sort.key !== c.key ? 'none' : sort.dir === 'asc' ? 'ascending' : 'descending'
+                    }
+                  >
+                    <button
+                      type="button"
+                      className="font-semibold underline-offset-2 hover:underline"
+                      onClick={() => toggleSort(c.key)}
+                    >
+                      {c.label}
+                    </button>
                   </th>
                 ))}
                 <th scope="col" className="p-2">
@@ -226,7 +284,16 @@ function MembersTable() {
               </tr>
             </thead>
             <tbody>
-              {members.data.map((m) => {
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="p-2">
+                    {members.data.length === 0
+                      ? 'No members yet.'
+                      : `No members match "${query.trim()}".`}
+                  </td>
+                </tr>
+              )}
+              {rows.map((m) => {
                 const badge = badgeFor(m);
                 const deactivated = m.status === 'DEACTIVATED';
                 const self = m.id === org.membershipId;
