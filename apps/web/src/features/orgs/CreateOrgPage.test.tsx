@@ -39,7 +39,9 @@ describe('CreateOrgPage', () => {
     renderPage();
     expect(screen.getByRole('heading', { name: 'Create organisation' })).toBeVisible();
     const tz = (screen.getByLabelText('Time zone') as HTMLInputElement).value;
-    expect(tz).toMatch(/\//);
+    // CI runs in UTC (no slash), so only require a zone Intl accepts.
+    expect(tz).not.toBe('');
+    expect(() => new Intl.DateTimeFormat(undefined, { timeZone: tz })).not.toThrow();
   });
 
   it('creates the org, invalidates /me and navigates to it', async () => {
