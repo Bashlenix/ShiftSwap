@@ -5,8 +5,9 @@ import { createTestApp, makeMember, makeOrg, type TestCtx } from './helpers/test
 describe('retention purge (SDD §27)', () => {
   let ctx: TestCtx;
   let retention: RetentionService;
-  // Real time (ms-truncated): rows other specs left in the shared DB are never older than the cutoffs.
-  const now = new Date();
+  // Fixed and in the past: every row other specs leave in the shared DB is newer than the cutoffs,
+  // so the global purge only ever touches this file's rows. All fixture timestamps are explicit.
+  const now = new Date('2001-06-15T12:00:00.000Z');
   const utc = DateTime.fromJSDate(now, { zone: 'utc' });
   const shiftCutoff = utc.minus({ months: 24 }).toJSDate();
   const notifCutoff = utc.minus({ days: 90 }).toJSDate();
@@ -153,5 +154,49 @@ describe('retention purge (SDD §27)', () => {
       notifications: 0,
       unavailabilities: 0,
     });
+  });
+
+  it('keeps purging the other categories when the shift category fails', async () => {
+    const { orgId } = await makeOrg(ctx.prisma);
+    const m = await makeMember(ctx, orgId, { accessLevel: 'EMPLOYEE', withLogin: false });
+    const audit = await ctx.prisma.auditLog.create({
+      data: {
+        organizationId: orgId,
+        actorMembershipId: m.membershipId,
+        action: 'x',
+        entityType: 'Shift',
+        entityId: 'e',
+        createdAt: before(shiftCutoff),
+      },
+    });
+    const notif = await ctx.prisma.notification.create({
+      data: {
+        organizationId: orgId,
+        recipientMembershipId: m.membershipId,
+        type: 'OFFER_CREATED',
+        payload: {},
+        createdAt: before(notifCutoff),
+      },
+    });
+    const unavail = await ctx.prisma.unavailability.create({
+      data: {
+        organizationId: orgId,
+        membershipId: m.membershipId,
+        startAt: new Date(before(unavailCutoff).getTime() - 3_600_000),
+        endAt: before(unavailCutoff),
+      },
+    });
+
+    const other = await makeMember(ctx, orgId, { accessLevel: 'EMPLOYEE', withLogin: false });
+    await seedShift(orgId, m.membershipId, other.membershipId, before(shiftCutoff));
+    const spy = jest
+      .spyOn(ctx.prisma, '$transaction')
+      .mockRejectedValueOnce(new TypeError('boom') as never);
+    await expect(retention.purge(now)).rejects.toBeInstanceOf(AggregateError);
+    spy.mockRestore();
+
+    expect(await ctx.prisma.auditLog.count({ where: { id: audit.id } })).toBe(0);
+    expect(await ctx.prisma.notification.count({ where: { id: notif.id } })).toBe(0);
+    expect(await ctx.prisma.unavailability.count({ where: { id: unavail.id } })).toBe(0);
   });
 });
