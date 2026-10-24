@@ -25,13 +25,17 @@ import { ZodBody } from '../common/zod-body.pipe';
 import { MinAccess } from '../tenancy/min-access.decorator';
 import { Org, type OrgContext } from '../tenancy/org-context.decorator';
 import { OrgGuard } from '../tenancy/org.guard';
+import { DeactivationService, type DeactivationResult } from './deactivation.service';
 import { MembersService } from './members.service';
 
 @Controller('orgs/:orgId/members')
 @UseGuards(SessionGuard, OrgGuard)
 @MinAccess('MANAGER')
 export class MembersController {
-  constructor(private readonly members: MembersService) {}
+  constructor(
+    private readonly members: MembersService,
+    private readonly deactivation: DeactivationService,
+  ) {}
 
   @Get()
   list(@Org() org: OrgContext, @Query('status') status?: string): Promise<MemberDto[]> {
@@ -69,5 +73,24 @@ export class MembersController {
     @Body(ZodBody(resendInviteSchema)) body: ResendInviteInput,
   ): Promise<{ inviteLink: string }> {
     return this.members.resendInvite(org, membershipId, body);
+  }
+
+  /** Deactivating an ADMIN additionally requires ADMIN (checked in the service). */
+  @Post(':membershipId/deactivate')
+  @HttpCode(200)
+  deactivate(
+    @Org() org: OrgContext,
+    @Param('membershipId') membershipId: string,
+  ): Promise<DeactivationResult> {
+    return this.deactivation.deactivate(org, membershipId);
+  }
+
+  @Post(':membershipId/reactivate')
+  @HttpCode(200)
+  reactivate(
+    @Org() org: OrgContext,
+    @Param('membershipId') membershipId: string,
+  ): Promise<MemberDto> {
+    return this.deactivation.reactivate(org, membershipId);
   }
 }

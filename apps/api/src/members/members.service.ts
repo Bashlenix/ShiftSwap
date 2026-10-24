@@ -25,7 +25,7 @@ type MemberRow = Membership & { skills: { skillId: string }[] };
 
 const DEACTIVATED_MSG = 'This person was deactivated — reactivate them instead.';
 
-const toDto = (m: MemberRow, invitePending: boolean): MemberDto => ({
+export const toMemberDto = (m: MemberRow, invitePending: boolean): MemberDto => ({
   id: m.id,
   displayName: m.displayName,
   accessLevel: m.accessLevel,
@@ -63,7 +63,7 @@ export class MembersService {
       },
       orderBy: [{ displayName: 'asc' }, { id: 'asc' }],
     });
-    return rows.map((m) => toDto(m, m.invites.length > 0));
+    return rows.map((m) => toMemberDto(m, m.invites.length > 0));
   }
 
   async create(org: OrgContext, input: CreateMemberInput): Promise<CreateMemberResponse> {
@@ -114,9 +114,9 @@ export class MembersService {
           weeklyLimitMin: member.weeklyLimitMin,
         },
       });
-      if (!email) return { member: toDto(member, false), inviteLink: null };
+      if (!email) return { member: toMemberDto(member, false), inviteLink: null };
       const link = await this.issueInvite(tx, after, org, member.id, email, input.appOrigin);
-      return { member: toDto(member, true), inviteLink: link };
+      return { member: toMemberDto(member, true), inviteLink: link };
     });
   }
 
@@ -186,7 +186,7 @@ export class MembersService {
           expiresAt: { gt: new Date() },
         },
       });
-      return toDto(updated, pending > 0);
+      return toMemberDto(updated, pending > 0);
     });
   }
 

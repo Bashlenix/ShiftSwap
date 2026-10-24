@@ -1,5 +1,8 @@
 import { DynamicModule, Module } from '@nestjs/common';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { OffersModule } from '../offers/offers.module';
 import { TenancyModule } from '../tenancy/tenancy.module';
+import { DeactivationService } from './deactivation.service';
 import { MembersController } from './members.controller';
 import { MEMBERS_ENV, MembersService } from './members.service';
 
@@ -9,9 +12,9 @@ export class MembersModule {
   static register(env: NodeJS.ProcessEnv): DynamicModule {
     return {
       module: MembersModule,
-      imports: [TenancyModule],
+      imports: [TenancyModule, OffersModule, NotificationsModule],
       controllers: [MembersController],
-      providers: [MembersService, { provide: MEMBERS_ENV, useValue: env }],
+      providers: [MembersService, DeactivationService, { provide: MEMBERS_ENV, useValue: env }],
     };
   }
 }

@@ -709,8 +709,11 @@ export class OffersService {
     });
   }
 
-  /** OFFER_CREATED: eligible members (role eligible) + managers for give-aways (role manager). */
-  private async notifyCreated(
+  /**
+   * OFFER_CREATED: eligible members (role eligible) + managers for give-aways (role manager).
+   * Public so member deactivation notifies reposted open shifts exactly like a manual post.
+   */
+  async notifyCreated(
     tx: Tx,
     org: OrgContext,
     offer: { id: string; kind: 'GIVE_AWAY' | 'OPEN_SHIFT'; shiftId: string },

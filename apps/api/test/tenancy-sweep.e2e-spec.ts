@@ -205,6 +205,39 @@ describe('tenancy and permission sweep', () => {
       ],
     },
     {
+      route: 'POST orgs/:orgId/members/:membershipId/deactivate',
+      actor: 'manager',
+      expected: 200,
+      managerOnly: true,
+      setup: async () => ({ params: { ...base(), membershipId: (await mkPlaceholder(false)).id } }),
+      foreign: [
+        {
+          name: 'membershipId of org B',
+          mutate: (r, fx) => ({ ...r, params: { ...r.params, membershipId: fx.b.employeeId } }),
+        },
+      ],
+    },
+    {
+      route: 'POST orgs/:orgId/members/:membershipId/reactivate',
+      actor: 'manager',
+      expected: 200,
+      managerOnly: true,
+      setup: async () => {
+        const m = await mkPlaceholder(false);
+        await ctx.prisma.membership.update({
+          where: { id: m.id },
+          data: { status: 'DEACTIVATED' },
+        });
+        return { params: { ...base(), membershipId: m.id } };
+      },
+      foreign: [
+        {
+          name: 'membershipId of org B',
+          mutate: (r, fx) => ({ ...r, params: { ...r.params, membershipId: fx.b.employeeId } }),
+        },
+      ],
+    },
+    {
       route: 'GET orgs/:orgId/skills',
       actor: 'employee',
       expected: 200,
