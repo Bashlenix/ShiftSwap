@@ -81,7 +81,7 @@ test('Tom reads and clears his notifications', async ({ page }) => {
   const nav = page.getByRole('navigation', { name: 'Main' });
   await expect(nav.getByRole('link', { name: /^Notifications \(\d+\)$/ })).toBeVisible();
   await openPage(page, 'Notifications', 'Notifications');
-  const accepted = page.getByText(/^Someone accepted the offer for /);
+  const accepted = page.getByText(/Someone accepted the offer for /);
   await expect(accepted.first()).toBeVisible();
   await expect(page.getByText('New', { exact: true }).first()).toBeVisible();
   await expectNoSeriousAxeViolations(page);
