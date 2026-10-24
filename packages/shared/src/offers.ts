@@ -55,10 +55,17 @@ export interface MemberDto {
   id: string;
   displayName: string;
   accessLevel: AccessLevel;
-  status: string;
+  email: string | null;
+  status: 'ACTIVE' | 'DEACTIVATED';
   hasLogin: boolean;
+  invitePending: boolean;
   skillIds: string[];
   weeklyLimitMin: number | null;
+}
+
+export interface CreateMemberResponse {
+  member: MemberDto;
+  inviteLink: string | null;
 }
 
 export interface SkillDto {

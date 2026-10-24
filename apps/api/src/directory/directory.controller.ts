@@ -23,8 +23,10 @@ export class DirectoryController {
       id: m.id,
       displayName: m.displayName,
       accessLevel: m.accessLevel,
+      email: m.email,
       status: m.status,
       hasLogin: m.userId !== null,
+      invitePending: false,
       skillIds: m.skills.map((s) => s.skillId),
       weeklyLimitMin: m.weeklyLimitMin,
     }));
