@@ -6,6 +6,7 @@ import {
   resolveTrustedOrigins,
   useSecureCookies,
 } from '../config/auth-config';
+import { IP_ADDRESS_HEADERS, TRUSTED_PROXIES } from '../common/client-ip';
 import type { PrismaClient } from '../generated/prisma/client';
 
 export function createAuth(prisma: PrismaClient, env: NodeJS.ProcessEnv = process.env) {
@@ -31,7 +32,7 @@ export function createAuth(prisma: PrismaClient, env: NodeJS.ProcessEnv = proces
       useSecureCookies: useSecureCookies(env),
       // The web proxy sets x-forwarded-for. Loopback hops are skipped so a client-supplied
       // leftmost value cannot choose its own rate-limit bucket.
-      ipAddress: { ipAddressHeaders: ['x-forwarded-for'], trustedProxies: ['127.0.0.0/8', '::1'] },
+      ipAddress: { ipAddressHeaders: IP_ADDRESS_HEADERS, trustedProxies: TRUSTED_PROXIES },
     },
   });
 }

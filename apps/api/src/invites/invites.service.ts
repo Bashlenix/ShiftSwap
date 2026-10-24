@@ -32,6 +32,8 @@ function stateOf(
   return 'VALID';
 }
 
+const ALREADY_MEMBER_MSG = 'You are already a member of this organization.';
+
 const notFound = () => new DomainError('NOT_FOUND', 'Not found');
 
 const MESSAGES: Record<Exclude<State, 'VALID'>, string> = {
@@ -73,8 +75,8 @@ export class InvitesService {
       const invite = rows[0];
       if (!invite) throw notFound();
       await lockMembership(tx, invite.organization_id, invite.membership_id);
-      const membership = await tx.membership.findUniqueOrThrow({
-        where: { id: invite.membership_id },
+      const membership = await tx.membership.findFirstOrThrow({
+        where: { id: invite.membership_id, organizationId: invite.organization_id },
         select: { status: true, userId: true },
       });
 
@@ -96,11 +98,19 @@ export class InvitesService {
       }
       await this.assertNotMember(tx, invite.organization_id, user.id);
 
-      await tx.membership.update({
-        where: { id: invite.membership_id },
-        data: { userId: user.id, email: sessionEmail },
-      });
-      await tx.invite.update({ where: { id: invite.id }, data: { acceptedAt: new Date() } });
+      try {
+        await tx.membership.update({
+          where: { id: invite.membership_id },
+          data: { userId: user.id, email: sessionEmail },
+        });
+      } catch (e) {
+        // Concurrent accept of a second invite for the same org: (organization_id, user_id) is unique.
+        if ((e as { code?: string }).code === 'P2002') {
+          throw new DomainError('ALREADY_MEMBER', ALREADY_MEMBER_MSG);
+        }
+        throw e;
+      }
+      await tx.invite.updateMany({ where: { id: invite.id, organizationId: invite.organization_id }, data: { acceptedAt: new Date() } });
       await this.audit.record(tx, {
         orgId: invite.organization_id,
         actorMembershipId: invite.membership_id,
@@ -119,7 +129,7 @@ export class InvitesService {
       select: { id: true },
     });
     if (existing) {
-      throw new DomainError('ALREADY_MEMBER', 'You are already a member of this organization.');
+      throw new DomainError('ALREADY_MEMBER', ALREADY_MEMBER_MSG);
     }
   }
 }

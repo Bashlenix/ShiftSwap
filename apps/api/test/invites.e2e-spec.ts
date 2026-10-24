@@ -98,8 +98,20 @@ describe('invites API (FR-02)', () => {
       const { token } = await invite();
       const fixed = '203.0.113.77';
       for (let i = 0; i < 20; i++) expect((await get(token, fixed)).status).toBe(200);
-      expect((await get(token, fixed)).status).toBe(429);
+      const limited = await get(token, fixed);
+      expect(limited.status).toBe(429);
+      expect(limited.body.error.code).toBe('RATE_LIMITED');
       expect((await get(token, '203.0.113.78')).status).toBe(200);
+    });
+
+    it('buckets by client IP behind the loopback proxy hop; a spoofed leftmost value is no new bucket', async () => {
+      const { token } = await invite();
+      const c1 = '10.9.0.1, 127.0.0.1';
+      const c2 = '10.9.0.2, 127.0.0.1';
+      for (let i = 0; i < 20; i++) expect((await get(token, c1)).status).toBe(200);
+      expect((await get(token, c1)).status).toBe(429);
+      expect((await get(token, c2)).status).toBe(200);
+      expect((await get(token, `6.6.6.${n}, ${c1}`)).status).toBe(429);
     });
 
     it('does not throttle other routes', async () => {
@@ -142,7 +154,7 @@ describe('invites API (FR-02)', () => {
       );
     });
 
-    it('email compare is case-insensitive in both directions', async () => {
+    it('accepts when the session email differs from the invite email only by case', async () => {
       const { token, addr } = await invite();
       const u = await user(addr.toUpperCase());
       expect((await accept(token, u.cookie)).status).toBe(200);

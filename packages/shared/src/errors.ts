@@ -15,6 +15,7 @@ export const ERROR_CODES = [
   'INVITE_INVALID',
   'SKILL_IN_USE',
   'EMAIL_MISMATCH',
+  'RATE_LIMITED',
   'INTERNAL',
 ] as const;
 

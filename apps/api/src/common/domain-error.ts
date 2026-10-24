@@ -18,6 +18,7 @@ export const STATUS_BY_CODE: Record<ErrorCode, number> = {
   INVITE_INVALID: 410,
   SKILL_IN_USE: 409,
   EMAIL_MISMATCH: 403,
+  RATE_LIMITED: 429,
   INTERNAL: 500,
 };
 
