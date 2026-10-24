@@ -14,5 +14,6 @@ module.exports = {
   ],
   // Generated Prisma client imports use .js extensions that resolve to .ts sources.
   moduleNameMapper: { '^(\\.{1,2}/.*)\\.js$': '$1' },
+  setupFiles: ['<rootDir>/test/unit-env.ts'],
   testEnvironment: 'node',
 };

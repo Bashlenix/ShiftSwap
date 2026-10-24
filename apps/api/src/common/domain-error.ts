@@ -13,6 +13,12 @@ export const STATUS_BY_CODE: Record<ErrorCode, number> = {
   OFFER_ALREADY_OPEN: 409,
   INELIGIBLE: 422,
   SELF_APPROVAL_FORBIDDEN: 403,
+  LAST_ADMIN: 409,
+  ALREADY_MEMBER: 409,
+  INVITE_INVALID: 410,
+  SKILL_IN_USE: 409,
+  EMAIL_MISMATCH: 403,
+  RATE_LIMITED: 429,
   INTERNAL: 500,
 };
 
@@ -22,9 +28,11 @@ export class DomainError extends Error {
     readonly code: ErrorCode,
     message: string,
     readonly details?: Record<string, unknown>,
+    /** Overrides the code's default status (e.g. 409 VALIDATION_FAILED for a duplicate name). */
+    status?: number,
   ) {
     super(message);
     this.name = 'DomainError';
-    this.status = STATUS_BY_CODE[code];
+    this.status = status ?? STATUS_BY_CODE[code];
   }
 }

@@ -40,7 +40,13 @@ export function OrgPickerPage() {
               ))}
             </ul>
           )}
-          <Button variant="outline" className="mt-6 w-full" onClick={() => void logOut()}>
+          <Link
+            to="/orgs/new"
+            className="mt-6 block rounded-md border border-slate-300 px-4 py-3 text-center font-medium text-indigo-800 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700"
+          >
+            Create organisation
+          </Link>
+          <Button variant="outline" className="mt-2 w-full" onClick={() => void logOut()}>
             Log out
           </Button>
         </CardContent>

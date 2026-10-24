@@ -4,13 +4,18 @@ import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './auth/auth.module';
 import { pathOnly } from './config/log-url';
 import { AuditModule } from './audit/audit.module';
-import { DirectoryModule } from './directory/directory.module';
+import { SkillsModule } from './skills/skills.module';
 import { AvailabilityModule } from './availability/availability.module';
 import { ShiftsModule } from './shifts/shifts.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { OffersModule } from './offers/offers.module';
+import { OrgsModule } from './orgs/orgs.module';
+import { MembersModule } from './members/members.module';
+import { InvitesModule } from './invites/invites.module';
 import { MeController } from './me/me.controller';
 import { HealthController } from './health/health.controller';
 import type { PrismaClient } from './generated/prisma/client';
+import { MailModule } from './mail/mail.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({})
@@ -39,11 +44,16 @@ export class AppModule {
         }),
         PrismaModule.register(options.prisma),
         AuthModule.register(env),
+        MailModule,
         AuditModule,
-        DirectoryModule,
+        SkillsModule,
+        MembersModule.register(env),
+        InvitesModule,
         ShiftsModule,
         AvailabilityModule,
         OffersModule,
+        NotificationsModule,
+        OrgsModule,
         // Offer expiry scheduler (SDD §25); tests drive OffersService.expireDue directly.
         ...(env.NODE_ENV === 'test' ? [] : [ScheduleModule.forRoot()]),
       ],

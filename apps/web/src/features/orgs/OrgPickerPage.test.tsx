@@ -50,14 +50,18 @@ describe('OrgPickerPage', () => {
     expect(await screen.findByRole('heading', { name: 'Choose an organisation' })).toBeVisible();
     expect(await screen.findByRole('link', { name: 'Café Lindenhof · Employee' })).toBeVisible();
     expect(screen.getByRole('link', { name: 'Bäckerei Sonne · Manager' })).toBeVisible();
-    expect(screen.getAllByRole('link')).toHaveLength(2);
+    expect(screen.getAllByRole('link')).toHaveLength(3);
+    expect(screen.getByRole('link', { name: 'Create organisation' })).toHaveAttribute(
+      'href',
+      '/orgs/new',
+    );
   });
 
   it('shows an empty state without memberships', async () => {
     apiFetch.mockResolvedValue({ user, memberships: [] });
     renderPage();
     expect(await screen.findByText('You are not a member of any organisation yet.')).toBeVisible();
-    expect(screen.queryAllByRole('link')).toHaveLength(0);
+    expect(screen.getAllByRole('link')).toHaveLength(1);
   });
 
   it('logs out and returns to the login page', async () => {

@@ -37,6 +37,13 @@ function fromHttpException(e: HttpException): Rendered {
   if (status === 401) return { status, code: 'UNAUTHENTICATED', message: 'Not signed in' };
   if (status === 403) return { status, code: 'FORBIDDEN', message: 'Forbidden' };
   if (status === 404) return { status, code: 'NOT_FOUND', message: 'Not found' };
+  if (status === 429) {
+    return {
+      status,
+      code: 'RATE_LIMITED',
+      message: 'Too many requests. Please wait a moment and try again.',
+    };
+  }
   if (status === 409) return { status, code: 'INVALID_TRANSITION', message: 'Conflict' };
   if (status < 500) return { status, code: 'VALIDATION_FAILED', message: 'Invalid request' };
   return internal();

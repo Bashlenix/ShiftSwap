@@ -13,8 +13,9 @@ import type { Prisma } from '../generated/prisma/client';
 import { checkEligibility } from '../matching/eligibility';
 import { EligibilityLoader } from '../matching/eligibility-loader';
 import { OfferLifecycle } from '../offers/offer-lifecycle';
-import { lockShift } from '../offers/offer-locks';
+import { lockMembership, lockShift } from '../offers/offer-locks';
 import { PrismaService } from '../prisma/prisma.service';
+import { lockSkills } from '../skills/skill-locks';
 import type { OrgContext } from '../tenancy/org-context.decorator';
 import { SHIFT_INCLUDE, toAuditSnapshot, toShiftDto, type ShiftRow } from './shift-mapper';
 
@@ -64,7 +65,10 @@ export class ShiftsService {
   async create(org: OrgContext, input: CreateShiftInput): Promise<ShiftWriteResponse> {
     const skillIds = [...new Set(input.requiredSkillIds)];
     return this.prisma.$transaction(async (tx) => {
-      await this.assertOrgRefs(tx, org.orgId, skillIds, input.assignedMembershipId);
+      if (input.assignedMembershipId) {
+        await this.lockActiveAssignee(tx, org.orgId, input.assignedMembershipId);
+      }
+      await lockSkills(tx, org.orgId, skillIds);
       const created = await tx.shift.create({
         data: {
           organizationId: org.orgId,
@@ -107,7 +111,33 @@ export class ShiftsService {
       }
 
       const skillIds = input.requiredSkillIds ? [...new Set(input.requiredSkillIds)] : undefined;
-      await this.assertOrgRefs(tx, org.orgId, skillIds ?? [], input.assignedMembershipId ?? null);
+      // A new assignee, or any assignee of a shift that (now) starts in the future, must be
+      // active; edits of a past or in-progress shift keep its (possibly deactivated) holder.
+      const assignee =
+        input.assignedMembershipId !== undefined
+          ? input.assignedMembershipId
+          : before.assignedMembershipId;
+      if (
+        assignee &&
+        (assignee !== before.assignedMembershipId || new Date(startAt) > new Date())
+      ) {
+        await this.lockActiveAssignee(tx, org.orgId, assignee);
+      } else if (input.assignedMembershipId) {
+        await this.assertMemberInOrg(tx, org.orgId, input.assignedMembershipId);
+      }
+      const timesChanged =
+        new Date(startAt).getTime() !== before.startAt.getTime() ||
+        new Date(endAt).getTime() !== before.endAt.getTime();
+      if (skillIds) await lockSkills(tx, org.orgId, skillIds);
+      // Moving the shift (e.g. from the past into the future) changes whether a skill delete
+      // counts it as "in use", so its current skills are locked too, at the same position.
+      else if (timesChanged) {
+        await lockSkills(
+          tx,
+          org.orgId,
+          before.skills.map((s) => s.skillId),
+        );
+      }
 
       const { count } = await tx.shift.updateMany({
         where: { id: shiftId, organizationId: org.orgId, version: input.version, deletedAt: null },
@@ -221,21 +251,24 @@ export class ShiftsService {
     });
   }
 
-  private async assertOrgRefs(
-    tx: Tx,
-    orgId: string,
-    skillIds: string[],
-    assigneeId: string | null,
-  ): Promise<void> {
-    if (skillIds.length > 0) {
-      const found = await tx.skill.count({
-        where: { organizationId: orgId, id: { in: skillIds } },
-      });
-      if (found !== skillIds.length) throw notFound();
-    }
-    if (assigneeId) {
-      const m = await tx.membership.count({ where: { organizationId: orgId, id: assigneeId } });
-      if (m === 0) throw notFound();
+  private async assertMemberInOrg(tx: Tx, orgId: string, membershipId: string): Promise<void> {
+    const m = await tx.membership.count({ where: { organizationId: orgId, id: membershipId } });
+    if (m === 0) throw notFound();
+  }
+
+  /**
+   * Locks the assignee's membership (after any offer -> shift locks, keeping the SDD §25 order)
+   * so a concurrent deactivation cannot slip in between; foreign/unknown -> 404,
+   * DEACTIVATED -> 409 INVALID_TRANSITION.
+   */
+  private async lockActiveAssignee(tx: Tx, orgId: string, membershipId: string): Promise<void> {
+    await lockMembership(tx, orgId, membershipId);
+    const m = await tx.membership.findUniqueOrThrow({
+      where: { id: membershipId },
+      select: { status: true },
+    });
+    if (m.status !== 'ACTIVE') {
+      throw new DomainError('INVALID_TRANSITION', 'This person is deactivated.');
     }
   }
 

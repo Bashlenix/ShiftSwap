@@ -55,6 +55,25 @@ export const DEMO_PLACEHOLDERS: { name: string; org: DemoOrgKey; accessLevel: Ac
   { name: 'Paul Weber', org: 'lindenhof', accessLevel: 'EMPLOYEE' },
 ];
 
+/** Pending invite: a roster entry with an email but no login yet. The seed sends no email. */
+export const DEMO_INVITES: {
+  org: DemoOrgKey;
+  email: string;
+  displayName: string;
+  accessLevel: AccessLevel;
+  skills: string[];
+  createdBy: string;
+}[] = [
+  {
+    org: 'lindenhof',
+    email: 'jonas@shiftswap.test',
+    displayName: 'Jonas Braun',
+    accessLevel: 'EMPLOYEE',
+    skills: ['Service'],
+    createdBy: 'maria@shiftswap.test',
+  },
+];
+
 export const DEMO_SKILLS: { org: DemoOrgKey; name: string }[] = [
   { org: 'lindenhof', name: 'Barista' },
   { org: 'lindenhof', name: 'Service' },
@@ -205,6 +224,21 @@ export const DEMO_OFFERS: DemoOffer[] = [
     originalOwner: null,
     acceptances: [],
   },
+];
+
+export interface DemoNotification {
+  recipient: string;
+  type: 'ACCEPTANCE_RECEIVED' | 'OFFER_CREATED';
+  /** Key of the shift whose offer the notification is about. */
+  shift: string;
+  role: 'owner' | 'manager' | 'eligible';
+}
+
+/** Unread in-app notifications, as if the seeded offers had just been created and accepted. */
+export const DEMO_NOTIFICATIONS: DemoNotification[] = [
+  { recipient: 'tom@shiftswap.test', type: 'ACCEPTANCE_RECEIVED', shift: 'L5', role: 'manager' },
+  { recipient: 'tom@shiftswap.test', type: 'ACCEPTANCE_RECEIVED', shift: 'L5', role: 'manager' },
+  { recipient: 'anna@shiftswap.test', type: 'OFFER_CREATED', shift: 'L3', role: 'eligible' },
 ];
 
 /** Org-local wall time (`today` + dayOffset days at HH:mm) as a UTC instant. */

@@ -19,8 +19,10 @@ const members = [
     id: 'm1',
     displayName: 'Anna Beck',
     accessLevel: 'EMPLOYEE' as const,
-    status: 'ACTIVE',
+    email: 'anna@example.com',
+    status: 'ACTIVE' as const,
     hasLogin: true,
+    invitePending: false,
     skillIds: [],
     weeklyLimitMin: null,
   },
@@ -269,5 +271,15 @@ describe('ShiftDialog', () => {
   it('offers no withdraw button without an open offer', () => {
     open({ ...stored, assignedMembershipId: null });
     expect(screen.queryByRole('button', { name: 'Withdraw open shift' })).toBeNull();
+  });
+
+  it('says the assignee is deactivated on INVALID_TRANSITION', async () => {
+    apiSend.mockRejectedValue(
+      new ApiError(409, { error: { code: 'INVALID_TRANSITION', message: 'x' } }),
+    );
+    open(stored);
+    await userEvent.type(screen.getByLabelText('Notes'), 'x');
+    await userEvent.click(screen.getByRole('button', { name: 'Save shift' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('This person is deactivated.');
   });
 });

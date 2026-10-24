@@ -3,6 +3,7 @@ import { Button } from '../../components/ui/button';
 import { cn } from '../../lib/utils';
 import { useLogout } from '../orgs/useLogout';
 import { useMe } from '../orgs/useMe';
+import { useUnreadCount } from '../notifications/useUnreadCount';
 import { OrgContext, type OrgInfo } from './useOrg';
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
@@ -15,6 +16,9 @@ export function OrgLayout() {
   const { orgId } = useParams();
   const { data, isPending, isError } = useMe();
   const logOut = useLogout();
+  const unread = useUnreadCount(
+    data?.memberships.some((m) => m.organizationId === orgId) ? orgId : undefined,
+  );
 
   if (isPending) return <p className="p-4">Loading…</p>;
   if (isError)
@@ -61,6 +65,10 @@ export function OrgLayout() {
             <NavLink to={`${base}/me/availability`} className={navClass}>
               Availability
             </NavLink>
+            <NavLink to={`${base}/notifications`} className={navClass}>
+              Notifications{unread > 0 ? ' ' : ''}
+              <span aria-live="polite">{unread > 0 ? `(${unread})` : ''}</span>
+            </NavLink>
             {org.accessLevel !== 'EMPLOYEE' && (
               <>
                 <NavLink to={`${base}/schedule`} className={navClass}>
@@ -69,7 +77,18 @@ export function OrgLayout() {
                 <NavLink to={`${base}/review`} className={navClass}>
                   Offer review
                 </NavLink>
+                <NavLink to={`${base}/members`} className={navClass}>
+                  Members
+                </NavLink>
+                <NavLink to={`${base}/audit`} className={navClass}>
+                  Audit
+                </NavLink>
               </>
+            )}
+            {org.accessLevel === 'ADMIN' && (
+              <NavLink to={`${base}/settings`} className={navClass}>
+                Settings
+              </NavLink>
             )}
           </nav>
           <div className="ml-auto flex items-center gap-3">

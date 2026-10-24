@@ -55,10 +55,25 @@ export interface MemberDto {
   id: string;
   displayName: string;
   accessLevel: AccessLevel;
-  status: string;
+  email: string | null;
+  status: 'ACTIVE' | 'DEACTIVATED';
   hasLogin: boolean;
+  invitePending: boolean;
   skillIds: string[];
   weeklyLimitMin: number | null;
+}
+
+/** Response of `POST …/members/:membershipId/deactivate`. */
+export interface DeactivationResult {
+  cancelledOffers: number;
+  reposted: number;
+  unassigned: number;
+  withdrawnAcceptances: number;
+}
+
+export interface CreateMemberResponse {
+  member: MemberDto;
+  inviteLink: string | null;
 }
 
 export interface SkillDto {

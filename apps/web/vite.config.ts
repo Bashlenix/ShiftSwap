@@ -19,7 +19,11 @@ export function viteServerOptions(env: Env) {
         // Rate limiting in the API buckets by x-forwarded-for.
         xfwd: true,
       },
-    },
+      // Demo inbox (Mailpit runs with MP_WEBROOT=mailpit); only when a target is configured.
+      ...(env.MAILPIT_PROXY_TARGET
+        ? { '/mailpit': { target: env.MAILPIT_PROXY_TARGET, ws: true } }
+        : {}),
+    } as Record<string, { target: string; changeOrigin?: boolean; xfwd?: boolean; ws?: boolean }>,
   };
 }
 

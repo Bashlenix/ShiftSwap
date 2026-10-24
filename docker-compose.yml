@@ -22,6 +22,9 @@ services:
 
   mailpit:
     image: axllent/mailpit:v1.32.0
+    environment:
+      # UI and API live under /mailpit/ so the web proxy can serve them on port 5173.
+      MP_WEBROOT: mailpit
     ports:
       - '8025:8025'
     restart: unless-stopped
@@ -33,6 +36,7 @@ services:
     environment:
       DATABASE_URL: postgresql://shiftswap:shiftswap@db:5432/shiftswap
       SEED_ON_START: 'true'
+      SMTP_HOST: mailpit
       AUTH_SECRET_FILE: /data/auth-secret.env
       TRUSTED_ORIGINS: http://127.0.0.1:5173
       CODESPACE_NAME: ${CODESPACE_NAME:-}
@@ -60,6 +64,7 @@ services:
       dockerfile: apps/web/Dockerfile
     environment:
       API_PROXY_TARGET: http://api:3000
+      MAILPIT_PROXY_TARGET: http://mailpit:8025
     ports:
       - '5173:5173'
     depends_on:

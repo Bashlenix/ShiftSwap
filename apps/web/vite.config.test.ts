@@ -17,6 +17,14 @@ describe('viteServerOptions', () => {
     expect(p.xfwd).toBe(true);
   });
 
+  it('proxies /mailpit with websockets only when MAILPIT_PROXY_TARGET is set', () => {
+    expect(viteServerOptions({}).proxy).not.toHaveProperty('/mailpit');
+    const o = viteServerOptions({ MAILPIT_PROXY_TARGET: 'http://mailpit:8025' });
+    const p = (o.proxy as Record<string, { target: string; ws?: boolean }>)['/mailpit'];
+    expect(p.target).toBe('http://mailpit:8025');
+    expect(p.ws).toBe(true);
+  });
+
   it('allows localhost and Codespace hosts', () => {
     const { allowedHosts } = viteServerOptions({});
     expect(allowedHosts).toContain('.app.github.dev');

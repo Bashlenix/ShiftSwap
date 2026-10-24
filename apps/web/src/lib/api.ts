@@ -4,6 +4,8 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code?: ErrorCode;
   readonly details?: Record<string, unknown>;
+  /** The server's human-readable message; only shown where it adds information. */
+  readonly serverMessage?: string;
 
   constructor(status: number, body?: Partial<ApiErrorBody> | null) {
     super(`API request failed with status ${status}`);
@@ -11,6 +13,7 @@ export class ApiError extends Error {
     this.status = status;
     this.code = body?.error?.code;
     this.details = body?.error?.details;
+    this.serverMessage = body?.error?.message;
   }
 }
 

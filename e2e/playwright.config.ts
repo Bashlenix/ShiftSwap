@@ -12,5 +12,16 @@ export default defineConfig({
     baseURL: 'http://localhost:5173',
     trace: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { browserName: 'chromium' } }],
+  // people-flow deactivates Mia, which would change the swap-flow data, so it runs in a
+  // second project that starts only after the first one has finished.
+  // chromium-people depends on chromium: that dependency, not file order, sets the order.
+  projects: [
+    { name: 'chromium', testIgnore: /people-flow/, use: { browserName: 'chromium' } },
+    {
+      name: 'chromium-people',
+      testMatch: /people-flow/,
+      dependencies: ['chromium'],
+      use: { browserName: 'chromium' },
+    },
+  ],
 });

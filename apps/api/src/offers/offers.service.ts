@@ -15,10 +15,12 @@ import { EligibilityLoader } from '../matching/eligibility-loader';
 import { rankByScore, scoreCandidate, type ScoreResult } from '../matching/ranking';
 import { durationMin } from '../matching/time';
 import type { TargetShift } from '../matching/types';
+import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { ShiftsService } from '../shifts/shifts.service';
 import type { OrgContext } from '../tenancy/org-context.decorator';
-import { closePending } from './offer-lifecycle';
+import { closePending, closePendingRows } from './offer-lifecycle';
+import { offerPayload } from './offer-notifications';
 import { lockMembership, lockOffer, lockShift } from './offer-locks';
 import {
   ACCEPTANCE_INITIAL_STATUS,
@@ -42,6 +44,8 @@ const MINE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 const notFound = () => new DomainError('NOT_FOUND', 'Not found');
 const expired = () => new DomainError('OFFER_EXPIRED', 'The offer has expired');
+const owners = (offer: { originalOwnerMembershipId: string | null }): string[] =>
+  offer.originalOwnerMembershipId ? [offer.originalOwnerMembershipId] : [];
 const isManager = (org: OrgContext) => org.accessLevel !== 'EMPLOYEE';
 
 /**
@@ -71,6 +75,7 @@ export class OffersService {
     private readonly audit: AuditService,
     private readonly loader: EligibilityLoader,
     private readonly shifts: ShiftsService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /* ------------------------------------------------------------------ expiry */
@@ -108,23 +113,32 @@ export class OffersService {
         after: offerAudit(after),
         metadata: { notSelectedAcceptanceIds: notSelected },
       });
+      await this.notifyExpired(tx, orgId, after);
       return true;
     });
   }
 
   /**
-   * Scheduler sweep over all orgs (system job): one conditional UPDATE expires every OPEN offer
-   * that is due, then PENDING -> NOT_SELECTED and an `offer.expired` audit row per offer, all in
-   * one transaction. An approve holding the offer lock makes the UPDATE wait; READ COMMITTED
-   * then re-evaluates `status = 'OPEN'` on the committed row, so an approved offer is skipped.
+   * Scheduler sweep over all orgs (system job): locks every due OPEN offer ascending by id with
+   * SKIP LOCKED, expires exactly those with a conditional UPDATE, then PENDING -> NOT_SELECTED
+   * and an `offer.expired` audit row per offer, all in one transaction. Taking the locks in id
+   * order (like deactivation and the lead-time recompute) avoids deadlocks; an offer whose lock
+   * is held (e.g. an approve in progress) is skipped and left to the next sweep or lazy expiry.
    */
   async expireDue(now: Date): Promise<number> {
     return this.prisma.$transaction(async (tx) => {
-      const rows = await tx.$queryRaw<{ id: string; organization_id: string }[]>`
+      const due = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "offers"
+         WHERE status = 'OPEN' AND expires_at <= ${now}
+         ORDER BY id FOR UPDATE SKIP LOCKED`;
+      if (due.length === 0) return 0;
+      const updated = await tx.$queryRaw<{ id: string; organization_id: string }[]>`
         UPDATE "offers"
            SET status = 'EXPIRED', version = version + 1, resolved_at = ${now}, updated_at = ${now}
-         WHERE status = 'OPEN' AND expires_at <= ${now}
+         WHERE id = ANY(${due.map((r) => r.id)}::text[]) AND status = 'OPEN'
         RETURNING id, organization_id`;
+      const rows = [...updated].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      const managersByOrg = new Map<string, string[]>();
       for (const row of rows) {
         const after = await tx.offer.findUniqueOrThrow({ where: { id: row.id } });
         const notSelected = await closePending(tx, row.id);
@@ -138,6 +152,7 @@ export class OffersService {
           after: offerAudit(after),
           metadata: { notSelectedAcceptanceIds: notSelected },
         });
+        await this.notifyExpired(tx, row.organization_id, after, managersByOrg);
       }
       return rows.length;
     });
@@ -287,6 +302,7 @@ export class OffersService {
         entityId: offer.id,
         after: offerAudit(offer),
       });
+      await this.notifyCreated(tx, org, offer, shift);
       return offer.id;
     });
     return toOfferSummary(await this.findOffer(this.prisma, org, id));
@@ -305,7 +321,7 @@ export class OffersService {
       if (offer.kind !== 'GIVE_AWAY') {
         throw new DomainError('INVALID_TRANSITION', 'Open shifts are claimed, not accepted');
       }
-      await this.lockAndCheckCandidate(tx, org, offer.shiftId);
+      const shift = await this.lockAndCheckCandidate(tx, org, offer.shiftId);
 
       const existing = await tx.acceptance.findUnique({
         where: { offerId_membershipId: { offerId, membershipId: org.membershipId } },
@@ -328,6 +344,7 @@ export class OffersService {
           before: { offerId, status: existing.status },
           after: { offerId, status: updated.status },
         });
+        await this.notifyAcceptance(tx, org, offer, shift);
         return { acceptance: toAcceptanceDto(updated), created: false };
       }
       const created = await tx.acceptance.create({
@@ -346,6 +363,7 @@ export class OffersService {
         entityId: created.id,
         after: { offerId, membershipId: org.membershipId, status: created.status },
       });
+      await this.notifyAcceptance(tx, org, offer, shift);
       return { acceptance: toAcceptanceDto(created), created: true };
     });
   }
@@ -432,6 +450,15 @@ export class OffersService {
         after: { ...offerAudit(after), assignedMembershipId: org.membershipId },
         metadata: { acceptanceId: acceptance.id, acceptanceStatus: acceptance.status },
       });
+      // The claimant is the actor and never notified themselves: managers only.
+      await this.notifications.notifyGroups(
+        tx,
+        org.orgId,
+        [{ role: 'manager', ids: await this.notifications.managerIds(tx, org.orgId) }],
+        'OPEN_SHIFT_FILLED',
+        offerPayload(offer, shift),
+        org.membershipId,
+      );
     });
     return toOfferSummary(await this.findOffer(this.prisma, org, offerId));
   }
@@ -560,6 +587,14 @@ export class OffersService {
           after: { offerId, status: 'INVALIDATED' },
           metadata: { code: 'RECHECK_FAILED', failedRules },
         });
+        await this.notifications.notify(
+          tx,
+          org.orgId,
+          [acceptance.membershipId],
+          'ACCEPTANCE_INVALIDATED',
+          offerPayload(offer, shift, 'candidate'),
+          org.membershipId,
+        );
         return { ok: false as const, failedRules };
       }
 
@@ -584,7 +619,8 @@ export class OffersService {
           version: { increment: 1 },
         },
       });
-      const notSelected = await closePending(tx, offerId);
+      const notSelectedRows = await closePendingRows(tx, offerId);
+      const notSelected = notSelectedRows.map((a) => a.id);
       await this.audit.record(tx, {
         orgId: org.orgId,
         actorMembershipId: org.membershipId,
@@ -599,6 +635,18 @@ export class OffersService {
           selfApproved,
         },
       });
+      await this.notifications.notifyGroups(
+        tx,
+        org.orgId,
+        [
+          { role: 'selected', ids: [acceptance.membershipId] },
+          { role: 'owner', ids: owners(offer) },
+          { role: 'notSelected', ids: notSelectedRows.map((a) => a.membershipId) },
+        ],
+        'OFFER_APPROVED',
+        offerPayload(offer, shift),
+        org.membershipId,
+      );
       return { ok: true as const };
     });
 
@@ -631,7 +679,8 @@ export class OffersService {
           version: { increment: 1 },
         },
       });
-      const notSelected = await closePending(tx, offerId);
+      const notSelectedRows = await closePendingRows(tx, offerId);
+      const notSelected = notSelectedRows.map((a) => a.id);
       await this.audit.record(tx, {
         orgId: org.orgId,
         actorMembershipId: org.membershipId,
@@ -642,11 +691,115 @@ export class OffersService {
         after: offerAudit(after),
         metadata: { notSelectedAcceptanceIds: notSelected },
       });
+      const shift = await this.shiftTimes(tx, offer.shiftId);
+      await this.notifications.notifyGroups(
+        tx,
+        org.orgId,
+        [
+          { role: 'owner', ids: owners(offer) },
+          { role: 'candidate', ids: notSelectedRows.map((a) => a.membershipId) },
+        ],
+        'OFFER_REJECTED',
+        offerPayload(offer, shift),
+        org.membershipId,
+      );
     });
     return toOfferSummary(await this.findOffer(this.prisma, org, offerId));
   }
 
   /* ------------------------------------------------------------------ helpers */
+
+  private async shiftTimes(tx: Tx, shiftId: string) {
+    return tx.shift.findUniqueOrThrow({
+      where: { id: shiftId },
+      select: { startAt: true, endAt: true },
+    });
+  }
+
+  /**
+   * OFFER_CREATED: eligible members (role eligible) + managers for give-aways (role manager).
+   * Public so member deactivation notifies reposted open shifts exactly like a manual post.
+   */
+  async notifyCreated(
+    tx: Tx,
+    org: OrgContext,
+    offer: { id: string; kind: 'GIVE_AWAY' | 'OPEN_SHIFT'; shiftId: string },
+    shift: Parameters<typeof EligibilityLoader.toTargetShift>[0],
+  ): Promise<void> {
+    const target = EligibilityLoader.toTargetShift(shift);
+    const loaded = await this.loader.load(tx, org, target);
+    const eligible = [...loaded]
+      .filter(([, entry]) => checkEligibility(entry.ctx, target).eligible)
+      .map(([id]) => id);
+    const managers =
+      offer.kind === 'GIVE_AWAY' ? await this.notifications.managerIds(tx, org.orgId) : [];
+    await this.notifications.notifyGroups(
+      tx,
+      org.orgId,
+      [
+        { role: 'eligible', ids: eligible },
+        { role: 'manager', ids: managers },
+      ],
+      'OFFER_CREATED',
+      offerPayload(offer, shift),
+      org.membershipId,
+    );
+  }
+
+  /** ACCEPTANCE_RECEIVED: the original owner and the managers (the accepting member is the actor). */
+  private async notifyAcceptance(
+    tx: Tx,
+    org: OrgContext,
+    offer: {
+      id: string;
+      kind: 'GIVE_AWAY' | 'OPEN_SHIFT';
+      shiftId: string;
+      originalOwnerMembershipId: string | null;
+    },
+    shift: { startAt: Date; endAt: Date },
+  ): Promise<void> {
+    await this.notifications.notifyGroups(
+      tx,
+      org.orgId,
+      [
+        { role: 'owner', ids: owners(offer) },
+        { role: 'manager', ids: await this.notifications.managerIds(tx, org.orgId) },
+      ],
+      'ACCEPTANCE_RECEIVED',
+      offerPayload(offer, shift),
+      org.membershipId,
+    );
+  }
+
+  /** OFFER_EXPIRED (system actor): owner + managers. `managersByOrg` caches the sweep's lookups. */
+  private async notifyExpired(
+    tx: Tx,
+    orgId: string,
+    offer: {
+      id: string;
+      kind: 'GIVE_AWAY' | 'OPEN_SHIFT';
+      shiftId: string;
+      originalOwnerMembershipId: string | null;
+    },
+    managersByOrg?: Map<string, string[]>,
+  ): Promise<void> {
+    let managers = managersByOrg?.get(orgId);
+    if (!managers) {
+      managers = await this.notifications.managerIds(tx, orgId);
+      managersByOrg?.set(orgId, managers);
+    }
+    await this.notifications.notifyGroups(
+      tx,
+      orgId,
+      [
+        { role: 'owner', ids: owners(offer) },
+        { role: 'manager', ids: managers },
+      ],
+      'OFFER_EXPIRED',
+      offerPayload(offer, await this.shiftTimes(tx, offer.shiftId)),
+      null,
+    );
+  }
 
   private async findOffer(db: Tx | PrismaService, org: OrgContext, offerId: string) {
     const row = await db.offer.findFirst({
