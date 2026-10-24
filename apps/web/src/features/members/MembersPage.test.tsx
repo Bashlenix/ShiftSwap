@@ -178,4 +178,67 @@ describe('MembersPage', () => {
     expect(apiSend).toHaveBeenCalledWith('POST', '/api/v1/orgs/org-1/members/m5/reactivate');
     expect(await screen.findByText('Dora Gone reactivated.')).toBeVisible();
   });
+
+  it('offers Resend invite for an expired invite (email, no login, nothing pending)', async () => {
+    apiFetch.mockImplementation((path: string) =>
+      Promise.resolve(
+        path.includes('/skills')
+          ? []
+          : [m('m7', 'Expired Eve', { hasLogin: false, invitePending: false })],
+      ),
+    );
+    renderWithOrg(<MembersPage />, MANAGER_ORG);
+    await screen.findByRole('table');
+    expect(within(rowOf('Expired Eve')).getByText('No login')).toBeVisible();
+    expect(
+      within(rowOf('Expired Eve')).getByRole('button', { name: /Resend invite/ }),
+    ).toBeVisible();
+  });
+
+  it('clears the previous invite at the start of a resend', async () => {
+    let finish: (v: unknown) => void = () => {};
+    apiSend.mockResolvedValueOnce({ inviteLink: 'http://localhost/invite/one' });
+    setup();
+    await screen.findByRole('table');
+    await userEvent.click(
+      within(rowOf('Ben Invited')).getByRole('button', { name: /Resend invite/ }),
+    );
+    expect(await screen.findByDisplayValue('http://localhost/invite/one')).toBeVisible();
+    apiSend.mockReturnValueOnce(new Promise((r) => (finish = r)));
+    await userEvent.click(
+      within(rowOf('Ben Invited')).getByRole('button', { name: /Resend invite/ }),
+    );
+    expect(screen.queryByDisplayValue('http://localhost/invite/one')).not.toBeInTheDocument();
+    finish({ inviteLink: 'http://localhost/invite/two' });
+    expect(await screen.findByDisplayValue('http://localhost/invite/two')).toBeVisible();
+  });
+
+  it('shows an error and keeps the link selectable when copying is impossible', async () => {
+    apiSend.mockResolvedValue({ inviteLink: 'http://localhost/invite/one' });
+    setup();
+    await screen.findByRole('table');
+    await userEvent.click(
+      within(rowOf('Ben Invited')).getByRole('button', { name: /Resend invite/ }),
+    );
+    Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+    await userEvent.click(await screen.findByRole('button', { name: 'Copy invite link' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Could not copy the link');
+    expect(screen.getByDisplayValue('http://localhost/invite/one')).toHaveAttribute('readonly');
+  });
+
+  it('uses the member wording and refreshes on INVALID_TRANSITION', async () => {
+    apiSend.mockRejectedValue(
+      new ApiError(409, { error: { code: 'INVALID_TRANSITION', message: 'x' } }),
+    );
+    setup();
+    await screen.findByRole('table');
+    const before = apiFetch.mock.calls.length;
+    await userEvent.click(
+      within(rowOf('Ben Invited')).getByRole('button', { name: /Resend invite/ }),
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "This person's status changed. The list has been refreshed.",
+    );
+    await waitFor(() => expect(apiFetch.mock.calls.length).toBeGreaterThan(before));
+  });
 });

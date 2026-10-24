@@ -118,7 +118,7 @@ function ShiftForm({
       else onClose({ notice: result.notice });
     } catch (err) {
       await refresh();
-      const message = errorMessage(err);
+      const message = errorMessage(err, { context: 'shift-assign' });
       if (err instanceof ApiError && err.code === 'VERSION_CONFLICT') onClose({ error: message });
       else setError(message);
     } finally {

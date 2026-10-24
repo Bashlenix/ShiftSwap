@@ -137,4 +137,38 @@ describe('MemberDialog', () => {
       'An organisation needs at least one admin.',
     );
   });
+
+  it('omits an unchanged weekly limit even when the stored minutes are not a whole 0.1 h', async () => {
+    apiSend.mockResolvedValue(member());
+    open(member({ weeklyLimitMin: 1234 }));
+    await userEvent.type(screen.getByLabelText('Name'), 'x');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(apiSend).toHaveBeenCalled());
+    expect(apiSend.mock.calls[0][2]).toEqual({ displayName: 'Anna Beckx' });
+  });
+
+  it('uses the member wording for INVALID_TRANSITION', async () => {
+    apiSend.mockRejectedValue(
+      new ApiError(409, { error: { code: 'INVALID_TRANSITION', message: 'x' } }),
+    );
+    open(member());
+    await userEvent.type(screen.getByLabelText('Name'), 'x');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "This person's status changed. The list has been refreshed.",
+    );
+  });
+
+  it('ignores close while a request is pending', async () => {
+    let finish: (v: unknown) => void = () => {};
+    apiSend.mockReturnValue(new Promise((r) => (finish = r)));
+    const onClose = open(member());
+    await userEvent.type(screen.getByLabelText('Name'), 'x');
+    await userEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+    finish(member());
+    await waitFor(() => expect(onClose).toHaveBeenCalledWith({ notice: 'Changes saved.' }));
+  });
 });

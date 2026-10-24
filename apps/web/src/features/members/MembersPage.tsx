@@ -124,7 +124,7 @@ function MembersTable() {
       if (message) setNotice(message);
     } catch (err) {
       await refresh();
-      setError(errorMessage(err));
+      setError(errorMessage(err, { context: 'member' }));
     } finally {
       setPending(false);
       afterDone?.();
@@ -133,6 +133,7 @@ function MembersTable() {
 
   function resend(m: MemberDto) {
     remember();
+    setInvite(null);
     void act(
       async () => {
         const res = await apiSend<{ inviteLink: string }>(
@@ -319,8 +320,8 @@ function MembersTable() {
               e.preventDefault();
               afterClose();
             }}
-            onEscapeKeyDown={() => setConfirming(null)}
-            onPointerDownOutside={() => setConfirming(null)}
+            onEscapeKeyDown={() => !pending && setConfirming(null)}
+            onPointerDownOutside={() => !pending && setConfirming(null)}
           >
             <DialogTitle>Deactivate {confirming.displayName}?</DialogTitle>
             <DialogDescription>

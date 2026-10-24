@@ -83,4 +83,15 @@ describe('errorMessage', () => {
     });
     expect(errorMessage(err)).toBe('This person was deactivated. Reactivate them instead.');
   });
+
+  it('words INVALID_TRANSITION per context', () => {
+    const err = new ApiError(409, {
+      error: { code: 'INVALID_TRANSITION', message: 'server text' },
+    });
+    expect(errorMessage(err)).toBe('This offer is no longer open.');
+    expect(errorMessage(err, { context: 'member' })).toBe(
+      "This person's status changed. The list has been refreshed.",
+    );
+    expect(errorMessage(err, { context: 'shift-assign' })).toBe('This person is deactivated.');
+  });
 });

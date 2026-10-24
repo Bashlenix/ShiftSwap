@@ -68,6 +68,11 @@ function MemberForm({ member, skills, onClose, onAfterClose }: Omit<Props, 'open
   const isAdmin = org.accessLevel === 'ADMIN';
   const accessLocked = !isAdmin && member?.accessLevel === 'ADMIN';
 
+  // A request is in flight: closing now would hide its outcome.
+  const close = () => {
+    if (!pending) onClose();
+  };
+
   const toggleSkill = (id: string) =>
     setSkillIds((cur) => (cur.includes(id) ? cur.filter((s) => s !== id) : [...cur, id]));
 
@@ -81,7 +86,9 @@ function MemberForm({ member, skills, onClose, onAfterClose }: Omit<Props, 'open
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    const weeklyLimitMin = limitMinutes();
+    const limitUnchanged =
+      member !== undefined && member !== null && hours === toHours(member.weeklyLimitMin);
+    const weeklyLimitMin = limitUnchanged ? member.weeklyLimitMin : limitMinutes();
     if (weeklyLimitMin === undefined) {
       setError('Enter a weekly limit between 1 and 80 hours, or leave it empty.');
       return;
@@ -94,7 +101,8 @@ function MemberForm({ member, skills, onClose, onAfterClose }: Omit<Props, 'open
         if (name.trim() !== member.displayName) patch.displayName = name.trim();
         if (access !== member.accessLevel) patch.accessLevel = access;
         if (!sameSet(skillIds, member.skillIds)) patch.skillIds = skillIds;
-        if (weeklyLimitMin !== member.weeklyLimitMin) patch.weeklyLimitMin = weeklyLimitMin;
+        if (!limitUnchanged && weeklyLimitMin !== member.weeklyLimitMin)
+          patch.weeklyLimitMin = weeklyLimitMin;
         if (Object.keys(patch).length > 0)
           await apiSend('PATCH', orgApi(org, `/members/${member.id}`), patch);
         await refresh();
@@ -115,7 +123,8 @@ function MemberForm({ member, skills, onClose, onAfterClose }: Omit<Props, 'open
         else onClose({ notice: `${name.trim()} added.` });
       }
     } catch (err) {
-      setError(errorMessage(err));
+      await refresh();
+      setError(errorMessage(err, { context: 'member' }));
     } finally {
       setPending(false);
     }
@@ -135,8 +144,8 @@ function MemberForm({ member, skills, onClose, onAfterClose }: Omit<Props, 'open
         e.preventDefault();
         onAfterClose?.();
       }}
-      onEscapeKeyDown={() => onClose()}
-      onPointerDownOutside={() => onClose()}
+      onEscapeKeyDown={close}
+      onPointerDownOutside={close}
     >
       <DialogTitle>{member ? 'Edit person' : 'Add person'}</DialogTitle>
       <DialogDescription>
@@ -223,7 +232,7 @@ function MemberForm({ member, skills, onClose, onAfterClose }: Omit<Props, 'open
         </div>
         <Feedback error={error} />
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={() => onClose()}>
+          <Button type="button" variant="outline" disabled={pending} onClick={close}>
             Cancel
           </Button>
           <Button type="submit" disabled={pending}>
