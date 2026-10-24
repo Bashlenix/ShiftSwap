@@ -26,13 +26,16 @@ describe('EMAIL_NOTIFICATION_TYPES', () => {
 describe('notificationPath', () => {
   it('sends managers to the review page of the offer', () => {
     expect(
-      notificationPath('o1', { type: 'OFFER_CREATED', payload: { role: 'manager', offerId: 'f1' } }),
+      notificationPath('o1', {
+        type: 'OFFER_CREATED',
+        payload: { role: 'manager', offerId: 'f1' },
+      }),
     ).toBe('/orgs/o1/review/f1');
   });
   it('sends managers to the review list without an offer id', () => {
-    expect(notificationPath('o1', { type: 'OPEN_SHIFT_FILLED', payload: { role: 'manager' } })).toBe(
-      '/orgs/o1/review',
-    );
+    expect(
+      notificationPath('o1', { type: 'OPEN_SHIFT_FILLED', payload: { role: 'manager' } }),
+    ).toBe('/orgs/o1/review');
   });
   it.each(['OFFER_CREATED', 'ACCEPTANCE_INVALIDATED'] as const)('%s goes to offers', (type) => {
     expect(notificationPath('o1', { type, payload: { role: 'eligible' } })).toBe('/orgs/o1/offers');

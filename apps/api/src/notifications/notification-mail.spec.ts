@@ -23,7 +23,9 @@ describe('buildNotificationMail', () => {
     expect(mail.text).toContain(
       'You get this email because you are a member of Café Lindenhof on ShiftSwap.',
     );
-    expect(mail.html).toContain('<a href="http://localhost:5173/orgs/o1/me/shifts">Open ShiftSwap</a>');
+    expect(mail.html).toContain(
+      '<a href="http://localhost:5173/orgs/o1/me/shifts">Open ShiftSwap</a>',
+    );
   });
 
   it('escapes the organisation name in the HTML', () => {
