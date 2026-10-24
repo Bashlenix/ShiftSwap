@@ -429,7 +429,9 @@ describe('members API (FR-02, FR-03)', () => {
           where: { id: ph.body.member.id },
         });
         expect(m.email).toBeNull();
-        expect(await ctx.prisma.invite.count({ where: { membershipId: ph.body.member.id } })).toBe(0);
+        expect(await ctx.prisma.invite.count({ where: { membershipId: ph.body.member.id } })).toBe(
+          0,
+        );
       });
 
       it('409 INVALID_TRANSITION for a member with a login; email unchanged', async () => {
@@ -471,7 +473,9 @@ describe('members API (FR-02, FR-03)', () => {
           where: { id: foreign.membershipId },
         });
         expect(m.email).toBeNull();
-        expect(await ctx.prisma.invite.count({ where: { membershipId: foreign.membershipId } })).toBe(0);
+        expect(
+          await ctx.prisma.invite.count({ where: { membershipId: foreign.membershipId } }),
+        ).toBe(0);
 
         await ctx.prisma.membership.update({
           where: { id: foreign.membershipId },
