@@ -122,4 +122,40 @@ describe('AccountPage', () => {
       expect(screen.getByRole('button', { name: 'Delete account…' })).toHaveFocus(),
     );
   });
+
+  it('stays open on Esc while the request runs and then shows LAST_ADMIN', async () => {
+    let reject!: (e: unknown) => void;
+    apiSend.mockReturnValue(new Promise((_, r) => (reject = r)));
+    renderPage();
+    await openDialog();
+    await userEvent.type(screen.getByLabelText('Type DELETE to confirm'), 'DELETE');
+    await userEvent.click(screen.getByRole('button', { name: 'Delete my account' }));
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('alertdialog')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeDisabled();
+    reject(
+      new ApiError(409, {
+        error: { code: 'LAST_ADMIN', message: 'x', details: { organizationIds: ['o1'] } },
+      }),
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent('last admin of Café Lindenhof');
+  });
+
+  it('does not close on an overlay click', async () => {
+    renderPage();
+    await openDialog();
+    const overlay = document.querySelector('.bg-black\\/50') as HTMLElement;
+    await userEvent.click(overlay);
+    expect(screen.getByRole('alertdialog')).toBeVisible();
+  });
+
+  it('closes on Esc when idle and returns focus', async () => {
+    renderPage();
+    await openDialog();
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Delete account…' })).toHaveFocus(),
+    );
+  });
 });

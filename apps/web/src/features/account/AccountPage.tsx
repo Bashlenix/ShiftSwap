@@ -44,6 +44,7 @@ export function AccountPage() {
   const inFlight = useRef(false);
 
   function onOpenChange(next: boolean) {
+    if (!next && busy) return;
     setOpen(next);
     if (!next) {
       setConfirmText('');
@@ -105,7 +106,13 @@ export function AccountPage() {
                   Delete account…
                 </Button>
               </DialogTrigger>
-              <DialogContent role="alertdialog">
+              <DialogContent
+                role="alertdialog"
+                onInteractOutside={(e) => e.preventDefault()}
+                onEscapeKeyDown={(e) => {
+                  if (busy) e.preventDefault();
+                }}
+              >
                 <DialogTitle>Delete your account?</DialogTitle>
                 <DialogDescription>
                   This removes your login, name and email and cannot be undone.
@@ -128,7 +135,9 @@ export function AccountPage() {
                 </div>
                 <div className="mt-6 flex justify-end gap-2">
                   <DialogClose asChild>
-                    <Button variant="outline">Cancel</Button>
+                    <Button variant="outline" disabled={busy}>
+                      Cancel
+                    </Button>
                   </DialogClose>
                   <Button
                     onClick={() => void deleteAccount()}
