@@ -8,6 +8,7 @@ import { apiFetch, apiSend } from '../../lib/api';
 import { errorMessage } from '../../lib/error-messages';
 import { orgApi, useOrg } from '../org/useOrg';
 import { useSkillNames } from '../org/useSkillNames';
+import { InviteDialog } from './InviteDialog';
 import { InviteResult } from './InviteResult';
 import { MemberDialog, type MemberDialogResult } from './MemberDialog';
 
@@ -60,6 +61,7 @@ function MembersTable() {
   const [showAll, setShowAll] = useState(false);
   const [dialog, setDialog] = useState<{ member: MemberDto | null } | null>(null);
   const [confirming, setConfirming] = useState<MemberDto | null>(null);
+  const [inviting, setInviting] = useState<MemberDto | null>(null);
   const [invite, setInvite] = useState<{ email: string; link: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -111,6 +113,7 @@ function MembersTable() {
       focusTarget.current = 'feedback';
     }
     setDialog(null);
+    setInviting(null);
   }
 
   /** Runs a row action; announces the outcome and moves focus to it. */
@@ -273,6 +276,20 @@ function MembersTable() {
                             Resend invite
                           </Button>
                         )}
+                        {!deactivated && !m.email && !m.hasLogin && (
+                          <Button
+                            variant="outline"
+                            className={btn}
+                            aria-label={`Invite ${m.displayName}`}
+                            onClick={() => {
+                              remember();
+                              setInvite(null);
+                              setInviting(m);
+                            }}
+                          >
+                            Invite
+                          </Button>
+                        )}
                         {!deactivated && !self && (
                           <Button
                             variant="outline"
@@ -313,6 +330,7 @@ function MembersTable() {
         onClose={closeDialog}
         onAfterClose={afterClose}
       />
+      <InviteDialog member={inviting} onClose={closeDialog} onAfterClose={afterClose} />
       <Dialog open={confirming !== null}>
         {confirming && (
           <DialogContent

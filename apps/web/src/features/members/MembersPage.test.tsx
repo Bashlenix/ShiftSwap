@@ -127,6 +127,61 @@ describe('MembersPage', () => {
     expect(await screen.findByText('Invite sent to m3@example.com.')).toBeVisible();
   });
 
+  it('offers Invite (not Resend) for a login-less placeholder without email', async () => {
+    setup();
+    await screen.findByRole('table');
+    const row = rowOf('Tom Placeholder');
+    expect(within(row).getByRole('button', { name: 'Invite Tom Placeholder' })).toBeVisible();
+    expect(within(row).queryByRole('button', { name: /Resend invite/ })).toBeNull();
+    expect(within(rowOf('Anna Beck')).queryByRole('button', { name: /^Invite / })).toBeNull();
+    expect(within(rowOf('Ben Invited')).queryByRole('button', { name: /^Invite / })).toBeNull();
+  });
+
+  it('invites a placeholder by email from a dialog and shows the link', async () => {
+    apiSend.mockResolvedValue({ inviteLink: 'http://localhost/invite/tom' });
+    setup();
+    await screen.findByRole('table');
+    await userEvent.click(screen.getByRole('button', { name: 'Invite Tom Placeholder' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Invite Tom Placeholder' });
+    await userEvent.type(within(dialog).getByLabelText('Email'), 'tom@example.com');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Send invite' }));
+    expect(apiSend).toHaveBeenCalledWith('POST', '/api/v1/orgs/org-1/members/m4/invite', {
+      email: 'tom@example.com',
+      appOrigin: window.location.origin,
+    });
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(await screen.findByText('Invite sent to tom@example.com.')).toBeVisible();
+    expect(screen.getByDisplayValue('http://localhost/invite/tom')).toBeVisible();
+  });
+
+  it('keeps the invite dialog open with the error when the email is taken', async () => {
+    apiSend.mockRejectedValue(
+      new ApiError(409, {
+        error: { code: 'ALREADY_MEMBER', message: 'This person is already a member.' },
+      }),
+    );
+    setup();
+    await screen.findByRole('table');
+    await userEvent.click(screen.getByRole('button', { name: 'Invite Tom Placeholder' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.type(within(dialog).getByLabelText('Email'), 'anna@example.com');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Send invite' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'This person is already a member.',
+    );
+    expect(screen.getByRole('dialog')).toBeVisible();
+  });
+
+  it('cancels the invite dialog without a request', async () => {
+    setup();
+    await screen.findByRole('table');
+    await userEvent.click(screen.getByRole('button', { name: 'Invite Tom Placeholder' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(apiSend).not.toHaveBeenCalled();
+  });
+
   it.each([
     [2, 'Deactivated. 2 future shifts were posted as open shifts.'],
     [1, 'Deactivated. 1 future shift was posted as an open shift.'],
