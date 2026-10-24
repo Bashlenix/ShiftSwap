@@ -187,6 +187,56 @@ describe('skills catalogue (FR-03)', () => {
     }
   });
 
+  it('a shift PATCH moving times without requiredSkillIds waits for a skill delete holding the skill lock', async () => {
+    const skill = (await create(`Race Move ${n++}`)).body;
+    // Past shift requiring the skill: a delete alone would be allowed (no future shift needs it).
+    const shift = await ctx.prisma.shift.create({
+      data: {
+        organizationId: orgId,
+        startAt: new Date(Date.now() - 3 * day),
+        endAt: new Date(Date.now() - 3 * day + 4 * hour),
+        skills: { create: [{ skillId: skill.id }] },
+      },
+    });
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    let locked: () => void = () => {};
+    const isLocked = new Promise<void>((r) => (locked = r));
+    // Same row lock a skill delete takes (FOR UPDATE on the skill row).
+    const holder = ctx.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "skills" WHERE id = ${skill.id} FOR UPDATE`;
+        locked();
+        await gate;
+      },
+      { timeout: 15_000 },
+    );
+    await isLocked;
+    let done = false;
+    const patch = api(app, manager.cookie)
+      .patch(`/api/v1/orgs/${orgId}/shifts/${shift.id}`)
+      .send({
+        version: 1,
+        startAt: new Date(Date.now() + 30 * day).toISOString(),
+        endAt: new Date(Date.now() + 30 * day + 4 * hour).toISOString(),
+      })
+      .then((r) => {
+        done = true;
+        return r;
+      });
+    await new Promise((r) => setTimeout(r, 500));
+    expect(done).toBe(false);
+    release();
+    await holder;
+    const res = await patch;
+    expect(res.status).toBe(200);
+    expect(res.body.shift.requiredSkillIds).toEqual([skill.id]);
+    // Now the shift is in the future and still requires the skill: delete is refused.
+    const del = await api(app, admin.cookie).delete(url(`/${skill.id}`));
+    expect(del.status).toBe(409);
+    expect(del.body.error.code).toBe('SKILL_IN_USE');
+  });
+
   it('deleting a skill while a member PATCH adds it: never 500 (x5)', async () => {
     for (let i = 0; i < 5; i++) {
       const skill = (await create(`Race Member ${n++}`)).body;

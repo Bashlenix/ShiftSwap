@@ -125,7 +125,19 @@ export class ShiftsService {
       } else if (input.assignedMembershipId) {
         await this.assertMemberInOrg(tx, org.orgId, input.assignedMembershipId);
       }
+      const timesChanged =
+        new Date(startAt).getTime() !== before.startAt.getTime() ||
+        new Date(endAt).getTime() !== before.endAt.getTime();
       if (skillIds) await lockSkills(tx, org.orgId, skillIds);
+      // Moving the shift (e.g. from the past into the future) changes whether a skill delete
+      // counts it as "in use", so its current skills are locked too, at the same position.
+      else if (timesChanged) {
+        await lockSkills(
+          tx,
+          org.orgId,
+          before.skills.map((s) => s.skillId),
+        );
+      }
 
       const { count } = await tx.shift.updateMany({
         where: { id: shiftId, organizationId: org.orgId, version: input.version, deletedAt: null },
