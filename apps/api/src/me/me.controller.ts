@@ -1,6 +1,9 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, UseGuards } from '@nestjs/common';
+import { deleteAccountSchema, type DeleteAccountInput } from '@shiftswap/shared';
+import { AccountService } from '../account/account.service';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SessionGuard, type AuthUser } from '../auth/session.guard';
+import { ZodBody } from '../common/zod-body.pipe';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface MeResponse {
@@ -18,7 +21,10 @@ export interface MeResponse {
 @Controller('me')
 @UseGuards(SessionGuard)
 export class MeController {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly account: AccountService,
+  ) {}
 
   @Get()
   async me(@CurrentUser() user: AuthUser): Promise<MeResponse> {
@@ -38,5 +44,17 @@ export class MeController {
         accessLevel: m.accessLevel,
       })),
     };
+  }
+
+  /** Deletes and anonymises the signed-in account (FR-23). 409 LAST_ADMIN blocks it. */
+  @Delete()
+  @HttpCode(204)
+  async deleteMe(
+    @CurrentUser() user: AuthUser,
+    // Validation only: the body is the typed confirmation, nothing to read from it.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    @Body(ZodBody(deleteAccountSchema)) _confirm: DeleteAccountInput,
+  ): Promise<void> {
+    await this.account.deleteAccount(user.id);
   }
 }

@@ -49,6 +49,24 @@ test("Tom approves Lukas for Anna's give-away", async ({ page }) => {
   await expect(detail.getByText(/^\W*Approved$/)).toBeVisible();
   await expect(detail.getByText(/^\W*Selected$/)).toBeVisible();
   await expect(detail.getByRole('button', { name: 'Approve Lukas Wolf' })).toHaveCount(0);
+
+  // The email goes out right after the approve request; a 60 s scheduler is the backstop.
+  // Mailpit is served through the web proxy.
+  let messageId = '';
+  await expect(async () => {
+    const search = await page.request.get(
+      `/mailpit/api/v1/search?query=${encodeURIComponent('to:lukas@shiftswap.test')}`,
+    );
+    expect(search.ok()).toBe(true);
+    const found = (await search.json()) as { messages?: { ID: string; Subject: string }[] };
+    const mail = found.messages?.find((m) => m.Subject.includes('You got the shift'));
+    expect(mail).toBeDefined();
+    messageId = mail!.ID;
+  }).toPass({ timeout: 20_000, intervals: [500, 1000, 2000] });
+  const message = await page.request.get(`/mailpit/api/v1/message/${messageId}`);
+  expect(message.ok()).toBe(true);
+  const body = (await message.json()) as { Text?: string };
+  expect(body.Text ?? '').toContain('/me/shifts');
 });
 
 test('Lukas now has the shift Tom approved', async ({ page }) => {

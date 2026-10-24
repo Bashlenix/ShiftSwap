@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SignUpPage } from './SignUpPage';
 
 const signUpEmail = vi.hoisted(() => vi.fn());
+// The real refresh reads the Better Auth store; LoginRedirect.test.tsx covers it end to end.
+vi.mock('../../lib/session', () => ({ refreshSession: vi.fn(async () => {}) }));
 vi.mock('../../lib/auth-client', () => ({ authClient: { signUp: { email: signUpEmail } } }));
 
 function renderPage(entry = '/signup') {

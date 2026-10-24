@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router';
 import { RequireAuth } from './components/RequireAuth';
 import { LoginPage } from './features/auth/LoginPage';
 import { SignUpPage } from './features/auth/SignUpPage';
+import { AccountPage } from './features/account/AccountPage';
 import { AcceptInvitePage } from './features/invites/AcceptInvitePage';
 import { CreateOrgPage } from './features/orgs/CreateOrgPage';
 import { AuditPage } from './features/audit/AuditPage';
@@ -24,6 +25,7 @@ export const router = createBrowserRouter([
     element: <RequireAuth />,
     children: [
       { path: '/orgs', element: <OrgPickerPage /> },
+      { path: '/account', element: <AccountPage /> },
       { path: '/orgs/new', element: <CreateOrgPage /> },
       {
         path: '/orgs/:orgId',

@@ -1,3 +1,4 @@
+import { escapeHtml } from '../mail/escape-html';
 import type { MailMessage } from '../mail/mail.service';
 
 /** "31 Oct 2026" in the organisation's time zone. */
@@ -11,9 +12,6 @@ export function formatExpiry(expiresAt: Date, timeZone: string): string {
   const get = (t: string) => parts.find((p) => p.type === t)!.value;
   return `${get('day')} ${get('month')} ${get('year')}`;
 }
-
-const escapeHtml = (s: string) =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 export function buildInviteMail(args: {
   to: string;

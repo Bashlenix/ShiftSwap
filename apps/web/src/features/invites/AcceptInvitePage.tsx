@@ -2,6 +2,7 @@ import type { InvitePreviewDto } from '@shiftswap/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
+import { AuthLayout } from '../../components/AuthLayout';
 import { Feedback } from '../../components/Feedback';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
@@ -12,6 +13,7 @@ import { authClient } from '../../lib/auth-client';
 import { errorMessage } from '../../lib/error-messages';
 import { PASSWORD_ERROR, PASSWORD_HINT } from '../../lib/password-copy';
 import { withNext } from '../../lib/safe-next';
+import { refreshSession } from '../../lib/session';
 import { isAlreadyRegistered } from '../../lib/sign-up-error';
 
 const GENERIC_FAILURE = 'Something went wrong. Please try again.';
@@ -23,14 +25,14 @@ const STATE_COPY: Record<string, string> = {
 
 function Shell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <main className="mx-auto flex min-h-screen max-w-md items-center p-4">
-      <Card className="w-full">
+    <AuthLayout>
+      <Card>
         <CardHeader>
           <CardTitle>{title}</CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">{children}</CardContent>
       </Card>
-    </main>
+    </AuthLayout>
   );
 }
 
@@ -153,6 +155,7 @@ function ValidInvite({ invite, token }: { invite: InvitePreviewDto; token: strin
         setBusy(false);
         return;
       }
+      await refreshSession();
     } catch {
       setError(GENERIC_FAILURE);
       inFlight.current = false;
@@ -220,7 +223,7 @@ function ValidInvite({ invite, token }: { invite: InvitePreviewDto; token: strin
           <Button onClick={() => setShowForm(true)}>Create account</Button>
           <Link
             to={loginHref}
-            className="inline-flex h-10 items-center justify-center rounded-md border border-slate-400 px-4 text-sm font-medium text-indigo-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700"
+            className="inline-flex h-11 items-center justify-center rounded-lg border border-control bg-surface px-4 text-sm font-medium text-brand-strong hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
           >
             I already have an account
           </Link>
@@ -241,7 +244,7 @@ function ValidInvite({ invite, token }: { invite: InvitePreviewDto; token: strin
             />
             <div aria-live="polite">
               {fieldErrors.name && (
-                <p id="name-error" className="text-sm text-red-700">
+                <p id="name-error" className="text-sm text-danger">
                   {fieldErrors.name}
                 </p>
               )}
@@ -264,12 +267,12 @@ function ValidInvite({ invite, token }: { invite: InvitePreviewDto; token: strin
                 fieldErrors.password ? 'password-hint password-error' : 'password-hint'
               }
             />
-            <p id="password-hint" className="text-sm text-slate-700">
+            <p id="password-hint" className="text-sm text-muted">
               {PASSWORD_HINT}
             </p>
             <div aria-live="polite">
               {fieldErrors.password && (
-                <p id="password-error" className="text-sm text-red-700">
+                <p id="password-error" className="text-sm text-danger">
                   {fieldErrors.password}
                 </p>
               )}
@@ -278,7 +281,7 @@ function ValidInvite({ invite, token }: { invite: InvitePreviewDto; token: strin
           <Feedback error={error} />
           {existingAccount && (
             <p>
-              <Link className="font-medium text-indigo-800 underline" to={loginHref}>
+              <Link className="font-medium text-brand-strong underline" to={loginHref}>
                 Log in
               </Link>
             </p>

@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Feedback } from '../../components/Feedback';
+import { AuthLayout } from '../../components/AuthLayout';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
@@ -60,8 +61,8 @@ export function CreateOrgPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md items-center p-4">
-      <Card className="w-full">
+    <AuthLayout>
+      <Card>
         <CardHeader>
           <CardTitle>Create organisation</CardTitle>
         </CardHeader>
@@ -79,7 +80,7 @@ export function CreateOrgPage() {
               />
               <div aria-live="polite">
                 {errors.name && (
-                  <p id="name-error" className="text-sm text-red-700">
+                  <p id="name-error" className="text-sm text-danger">
                     {errors.name}
                   </p>
                 )}
@@ -104,7 +105,7 @@ export function CreateOrgPage() {
               </datalist>
               <div aria-live="polite">
                 {errors.timezone && (
-                  <p id="timezone-error" className="text-sm text-red-700">
+                  <p id="timezone-error" className="text-sm text-danger">
                     {errors.timezone}
                   </p>
                 )}
@@ -116,12 +117,12 @@ export function CreateOrgPage() {
             </Button>
           </form>
           <p className="mt-4 text-sm">
-            <Link className="font-medium text-indigo-800 underline" to="/orgs">
+            <Link className="font-medium text-brand-strong underline" to="/orgs">
               Back to your organisations
             </Link>
           </p>
         </CardContent>
       </Card>
-    </main>
+    </AuthLayout>
   );
 }

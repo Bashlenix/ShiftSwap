@@ -95,6 +95,7 @@ model Organization {
   skills                Skill[]
   shifts                Shift[]
   unavailabilities      Unavailability[]
+  preferences           Preference[]
   offers                Offer[]
   acceptances           Acceptance[]
   auditLogs             AuditLog[]
@@ -123,6 +124,7 @@ model Membership {
   skills              MembershipSkill[]
   assignedShifts      Shift[]           @relation("ShiftAssignee")
   unavailabilities    Unavailability[]
+  preferences         Preference[]
   originalOwnerOffers Offer[]           @relation("OfferOriginalOwner")
   createdOffers       Offer[]           @relation("OfferCreator")
   resolvedOffers      Offer[]           @relation("OfferResolver")
@@ -332,6 +334,10 @@ model Invite {
 }
 
 // payload holds IDs, shift start/end, kind and role only (no names or free text).
+// The table doubles as the email outbox: email_dispatched_at IS NULL means "email still to send".
+// SQL-only partial index (not expressible in Prisma): notifications_email_pending_idx ON
+// notifications (created_at, id) WHERE email_dispatched_at IS NULL.
+// Lives in migration *_notification_email_outbox; future migrations must not drop it.
 model Notification {
   id                    String           @id @default(uuid())
   organizationId        String           @map("organization_id")
@@ -341,8 +347,38 @@ model Notification {
   type                  NotificationType
   payload               Json
   readAt                DateTime?        @map("read_at") @db.Timestamptz(3)
+  emailDispatchedAt     DateTime?        @map("email_dispatched_at") @db.Timestamptz(3)
   createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([recipientMembershipId, createdAt])
   @@map("notifications")
+}
+
+enum PreferenceSlot {
+  MORNING
+  AFTERNOON
+  EVENING
+}
+
+enum PreferenceValue {
+  PREFERRED
+  AVOID
+}
+
+// SQL-only constraint (not expressible in Prisma): CHECK preferences_weekday_range (weekday BETWEEN 0 AND 6).
+// Lives in migration *_preferences; future migrations must not drop it.
+// Only non-neutral rows are stored; weekday 0 = Monday … 6 = Sunday.
+model Preference {
+  organizationId String          @map("organization_id")
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  membershipId   String          @map("membership_id")
+  membership     Membership      @relation(fields: [membershipId], references: [id], onDelete: Restrict)
+  weekday        Int
+  slot           PreferenceSlot
+  value          PreferenceValue
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@id([membershipId, weekday, slot])
+  @@index([organizationId])
+  @@map("preferences")
 }

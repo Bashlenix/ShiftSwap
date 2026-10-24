@@ -231,14 +231,14 @@ flowchart LR
         WEB[web<br/>React SPA, port 5173<br/>proxies /api]
         API[api<br/>NestJS + Better Auth<br/>+ in-process scheduler]
         DB[(postgres)]
-        MP[mailpit<br/>local inbox, port 8025]
+        MP[mailpit<br/>local inbox, served at /mailpit/ via web proxy]
     end
     Sentry[Sentry EU<br/>optional]
     Browser -- forwarded HTTPS port --> WEB
     WEB -- /api/* same origin --> API
     API --> DB
     API -- SMTP after commit --> MP
-    Browser -. optional .-> MP
+    WEB -- /mailpit/* same origin --> MP
     API -. if DSN set .-> Sentry
 ```
 
@@ -770,7 +770,7 @@ In-app is the reliable channel (written in the same transaction as the change); 
 - Expiry notifications come from the 5-minute scheduler; lazy expiry during a write also notifies.
 - Email templates are plain, accessible HTML + text alternative, with a deep link to the relevant screen.
 
-**In the Codespace** all email is delivered over SMTP to Mailpit (web inbox on port 8025), so invites and notification emails can be shown live in the demo without a real email provider. A real provider (e.g. Resend) is a future swap of SMTP settings only.
+**In the Codespace** all email is delivered over SMTP to Mailpit (web inbox at /mailpit/ on the app's own URL, proxied by the web container; no extra port), so invites and notification emails can be shown live in the demo without a real email provider. A real provider (e.g. Resend) is a future swap of SMTP settings only.
 
 ## 24. Validation and Error Handling
 
@@ -942,7 +942,7 @@ sequenceDiagram
 
 - `.devcontainer/devcontainer.json`
   - `dockerComposeFile` + `service: workspace`, `runServices: [db, mailpit, api, web, workspace]`
-  - `forwardPorts: [5173]`; `portsAttributes`: 5173 label "ShiftSwap", `onAutoForward: openBrowser`; API port 3000 not forwarded (reached via proxy). Mailpit (8025) is not forwarded until a feature sends email (`host:port` entries in `forwardPorts` are not documented for Codespaces and coincided with nothing being forwarded)
+  - `workspace` service uses `network_mode: service:web`, so `localhost:5173` inside the primary container is the web app (Codespaces forwards ports from the primary container only); `forwardPorts: [5173]`; `portsAttributes`: 5173 label "ShiftSwap", `onAutoForward: openBrowser`; Mailpit is not forwarded: it runs with `MP_WEBROOT=mailpit` and the web container proxies `/mailpit/` to it; API port 3000 not forwarded (reached via proxy)
   - features `sshd` and `docker-outside-of-docker` so `gh codespace logs`/`ssh` and `docker compose logs` work for debugging
   - `onCreateCommand`: `npm ci`, `prisma generate`, build web + api (runs inside the **prebuild**, so it is not repeated at open time)
   - No `postStartCommand` that needs the user; all runtime steps live in container entrypoints

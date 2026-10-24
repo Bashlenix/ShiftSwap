@@ -71,10 +71,13 @@ export class MembersService {
     @Inject(MEMBERS_ENV) private readonly env: NodeJS.ProcessEnv,
   ) {}
 
-  async list(orgId: string, status: 'active' | 'all'): Promise<MemberDto[]> {
+  async list(orgId: string, status: 'active' | 'deactivated' | 'all'): Promise<MemberDto[]> {
     const now = new Date();
     const rows = await this.prisma.membership.findMany({
-      where: { organizationId: orgId, ...(status === 'active' ? { status: 'ACTIVE' } : {}) },
+      where: {
+        organizationId: orgId,
+        ...(status === 'all' ? {} : { status: status === 'active' ? 'ACTIVE' : 'DEACTIVATED' }),
+      },
       include: {
         skills: { select: { skillId: true } },
         // One query: only the id of at most one open invite per member (no N+1).
@@ -155,6 +158,30 @@ export class MembersService {
       }
       if (input.skillIds) await lockSkills(tx, org.orgId, input.skillIds);
 
+      const currentSkillIds = (
+        await tx.membershipSkill.findMany({
+          where: { membershipId },
+          select: { skillId: true },
+        })
+      ).map((x) => x.skillId);
+      const wanted = input.skillIds ? new Set(input.skillIds) : null;
+      const unchanged =
+        (input.displayName === undefined || input.displayName === current.displayName) &&
+        (input.accessLevel === undefined || input.accessLevel === current.accessLevel) &&
+        (input.weeklyLimitMin === undefined || input.weeklyLimitMin === current.weeklyLimitMin) &&
+        (wanted === null ||
+          (wanted.size === currentSkillIds.length &&
+            currentSkillIds.every((id) => wanted.has(id))));
+      if (unchanged) {
+        const pendingNow = await tx.invite.count({
+          where: { membershipId, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
+        });
+        return toMemberDto(
+          { ...current, skills: currentSkillIds.map((skillId) => ({ skillId })) },
+          pendingNow > 0,
+        );
+      }
+
       const updated = await tx.membership.update({
         where: { id: membershipId },
         data: {
@@ -223,6 +250,17 @@ export class MembersService {
         where: { membershipId, acceptedAt: null, revokedAt: null },
         data: { revokedAt: new Date() },
       });
+      if (email !== m.email) {
+        // Field name only: audit rows never hold addresses.
+        await this.audit.record(tx, {
+          orgId: org.orgId,
+          actorMembershipId: org.membershipId,
+          action: 'member.updated',
+          entityType: 'membership',
+          entityId: membershipId,
+          after: { fields: ['email'] },
+        });
+      }
       const link = await this.issueInvite(tx, after, org, membershipId, email, input.appOrigin);
       return { inviteLink: link };
     });

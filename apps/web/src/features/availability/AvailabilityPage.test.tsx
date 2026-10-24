@@ -16,9 +16,11 @@ describe('AvailabilityPage', () => {
   beforeEach(() => {
     apiFetch.mockReset();
     apiSend.mockReset();
-    apiFetch.mockResolvedValue([
-      { id: 'u1', startAt: '2026-11-06T17:00:00.000Z', endAt: '2026-11-06T22:00:00.000Z' },
-    ]);
+    apiFetch.mockImplementation(async (path: string) =>
+      path.endsWith('/me/preferences')
+        ? { entries: [] }
+        : [{ id: 'u1', startAt: '2026-11-06T17:00:00.000Z', endAt: '2026-11-06T22:00:00.000Z' }],
+    );
     apiSend.mockResolvedValue({});
   });
 

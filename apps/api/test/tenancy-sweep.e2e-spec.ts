@@ -416,6 +416,25 @@ describe('tenancy and permission sweep', () => {
       ],
     },
     {
+      route: 'GET orgs/:orgId/me/preferences',
+      actor: 'employee',
+      expected: 200,
+      managerOnly: false,
+      setup: async () => ({ params: base() }),
+      foreign: [],
+    },
+    {
+      route: 'PUT orgs/:orgId/me/preferences',
+      actor: 'employee',
+      expected: 200,
+      managerOnly: false,
+      setup: async () => ({
+        params: base(),
+        body: { entries: [{ weekday: 1, slot: 'MORNING', value: 'PREFERRED' }] },
+      }),
+      foreign: [],
+    },
+    {
       route: 'POST orgs/:orgId/offers',
       actor: 'employee',
       expected: 201,
@@ -633,6 +652,7 @@ describe('tenancy and permission sweep', () => {
       GET: client.get,
       POST: client.post,
       PATCH: client.patch,
+      PUT: client.put,
       DELETE: client.delete,
     }[method]!(`/api/v1/${path}${req.query ?? ''}`);
     return req.body === undefined ? call : call.send(req.body);

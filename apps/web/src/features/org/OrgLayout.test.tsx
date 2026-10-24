@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrgLayout } from './OrgLayout';
 import { useOrg } from './useOrg';
 
@@ -160,5 +160,122 @@ describe('OrgLayout', () => {
       'href',
       '/orgs/o1/members',
     );
+  });
+
+  describe('mobile nav scroll', () => {
+    const scrollIntoView = vi.fn();
+    const navScrollTo = vi.fn();
+    const windowScrollTo = vi.fn();
+    const restore: (() => void)[] = [];
+    let observers: { targets: Element[]; fire: () => void }[] = [];
+    /**
+     * jsdom has no layout: fake a 390 px nav (padding box 0..390, already scrolled 100 px)
+     * whose active pill sits at 600..700, plus ResizeObserver and the reduced-motion query.
+     */
+    function fakeLayout(reduced: boolean) {
+      const proto = HTMLElement.prototype;
+      const saved = (['scrollWidth', 'clientWidth', 'scrollLeft'] as const).map(
+        (k) => [k, Object.getOwnPropertyDescriptor(Element.prototype, k)] as const,
+      );
+      Object.defineProperty(proto, 'scrollWidth', { configurable: true, get: () => 800 });
+      Object.defineProperty(proto, 'clientWidth', { configurable: true, get: () => 390 });
+      Object.defineProperty(proto, 'scrollLeft', { configurable: true, get: () => 100 });
+      const rect = Element.prototype.getBoundingClientRect;
+      Element.prototype.getBoundingClientRect = function (this: Element) {
+        const [left, right] =
+          this.getAttribute('aria-current') === 'page'
+            ? [600, 700]
+            : this.tagName === 'NAV'
+              ? [0, 390]
+              : [0, 0];
+        return { left, right, top: 0, bottom: 0, width: right - left, height: 0 } as DOMRect;
+      };
+      const siv = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = scrollIntoView;
+      const sto = Element.prototype.scrollTo;
+      Element.prototype.scrollTo = navScrollTo as typeof Element.prototype.scrollTo;
+      const wsto = window.scrollTo;
+      window.scrollTo = windowScrollTo as typeof window.scrollTo;
+      const ro = globalThis.ResizeObserver;
+      observers = [];
+      globalThis.ResizeObserver = class {
+        targets: Element[] = [];
+        constructor(cb: () => void) {
+          observers.push({ targets: this.targets, fire: cb });
+        }
+        observe(el: Element) {
+          this.targets.push(el);
+        }
+        unobserve() {}
+        disconnect() {}
+      } as unknown as typeof ResizeObserver;
+      const mm = window.matchMedia;
+      window.matchMedia = ((q: string) => ({
+        matches: reduced && q === '(prefers-reduced-motion: reduce)',
+        media: q,
+      })) as unknown as typeof window.matchMedia;
+      restore.push(() => {
+        for (const k of ['scrollWidth', 'clientWidth', 'scrollLeft']) delete (proto as never)[k];
+        for (const [k, d] of saved) if (d) Object.defineProperty(Element.prototype, k, d);
+        Element.prototype.getBoundingClientRect = rect;
+        Element.prototype.scrollIntoView = siv;
+        Element.prototype.scrollTo = sto;
+        window.scrollTo = wsto;
+        window.matchMedia = mm;
+        globalThis.ResizeObserver = ro;
+      });
+    }
+    afterEach(() => {
+      restore.splice(0).forEach((r) => r());
+      for (const f of [scrollIntoView, navScrollTo, windowScrollTo]) f.mockReset();
+    });
+
+    const mount = async (reduced = false) => {
+      fakeLayout(reduced);
+      apiFetch.mockResolvedValue(me);
+      renderAt('/orgs/o1/offers');
+      await screen.findByText('offers page');
+      return screen.getByRole('navigation', { name: 'Main' });
+    };
+
+    it('scrolls only the nav row so the active pill is fully visible on mount', async () => {
+      const nav = await mount();
+      // Pill right edge 700 - 390 visible = 310 more than the current 100.
+      expect(navScrollTo).toHaveBeenCalledTimes(1);
+      expect(navScrollTo.mock.contexts[0]).toBe(nav);
+      expect(navScrollTo).toHaveBeenCalledWith({ left: 410, behavior: 'smooth' });
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(windowScrollTo).not.toHaveBeenCalled();
+    });
+
+    it('re-reveals on resize without touching the page scroll, until the user touches the nav', async () => {
+      const nav = await mount();
+      expect(observers).toHaveLength(1);
+      expect(observers[0].targets.length).toBeGreaterThan(0);
+      const y = window.scrollY;
+
+      act(() => observers[0].fire());
+      expect(navScrollTo).toHaveBeenCalledTimes(2);
+      expect(navScrollTo.mock.contexts[1]).toBe(nav);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(windowScrollTo).not.toHaveBeenCalled();
+      expect(window.scrollY).toBe(y);
+
+      fireEvent.pointerDown(nav);
+      act(() => observers[0].fire());
+      expect(navScrollTo).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops re-revealing after the page has been scrolled', async () => {
+      await mount();
+      fireEvent.scroll(window);
+      act(() => observers[0].fire());
+      expect(navScrollTo).toHaveBeenCalledTimes(1);
+    });
+
+    it('jumps without animation under reduced motion', async () => {
+      await mount(true);
+      expect(navScrollTo).toHaveBeenCalledWith({ left: 410, behavior: 'auto' });
+    });
   });
 });

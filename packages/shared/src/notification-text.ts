@@ -1,10 +1,13 @@
-import type { NotificationDto } from '@shiftswap/shared';
-import { formatShiftTime } from '../../lib/format';
+import type { NotificationDto } from './notifications';
+import { formatShiftTime } from './format';
 
 const FALLBACK = 'You have a new notification.';
 
 /** Plain-English text for a notification; never throws, unknown shapes get the fallback. */
-export function notificationText(n: NotificationDto, timezone: string): string {
+export function notificationText(
+  n: Pick<NotificationDto, 'type' | 'payload'>,
+  timezone: string,
+): string {
   const { shiftStartAt, shiftEndAt, role, reason } = n.payload ?? {};
   if (n.type === 'MEMBER_DEACTIVATED')
     return 'A member was deactivated; their shifts were reposted.';

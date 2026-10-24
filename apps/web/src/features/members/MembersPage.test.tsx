@@ -76,6 +76,15 @@ describe('MembersPage', () => {
     expect(screen.queryByText('Dora Gone')).not.toBeInTheDocument();
   });
 
+  it('keeps the empty feedback live region from adding space under the header', async () => {
+    setup();
+    await screen.findByRole('table', { name: 'People in Café Lindenhof' });
+    const region = document.querySelector('[aria-live="polite"][tabindex="-1"]')!;
+    expect(region).toBeEmptyDOMElement();
+    expect(region).toHaveClass('empty:-mt-4');
+    expect(region).not.toHaveClass('min-h-6');
+  });
+
   it('shows deactivated people when asked', async () => {
     setup();
     await screen.findByRole('table');
@@ -84,6 +93,58 @@ describe('MembersPage', () => {
     expect(within(row).getByText('Deactivated')).toBeVisible();
     expect(within(row).getByRole('button', { name: /Reactivate/ })).toBeVisible();
     expect(within(row).queryByRole('button', { name: /Deactivate/ })).not.toBeInTheDocument();
+  });
+
+  const bodyNames = () =>
+    screen
+      .getAllByRole('row')
+      .slice(1)
+      .map((r) => (within(r).getAllByRole('rowheader')[0]?.textContent ?? '').slice(0, 5));
+
+  it('filters rows by search and updates the count', async () => {
+    setup();
+    await screen.findByRole('table');
+    expect(screen.getByRole('status')).toHaveTextContent('Showing 4 of 4 members');
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search members' }), 'barista');
+    expect(screen.getByRole('status')).toHaveTextContent('Showing 3 of 4 members');
+    expect(screen.queryByText('Tom Placeholder')).not.toBeInTheDocument();
+    expect(screen.getByText('Anna Beck')).toBeVisible();
+  });
+
+  it('shows one row when nothing matches', async () => {
+    setup();
+    await screen.findByRole('table');
+    await userEvent.type(screen.getByRole('searchbox', { name: 'Search members' }), 'zzz');
+    expect(screen.getByText('No members match "zzz".')).toBeVisible();
+    expect(screen.getByRole('status')).toHaveTextContent('Showing 0 of 4 members');
+  });
+
+  it('sorts by a column button and toggles direction', async () => {
+    apiFetch.mockImplementation((path: string) =>
+      Promise.resolve(
+        path.includes('/skills')
+          ? [{ id: 'sk1', name: 'Barista' }]
+          : [
+              m('mem-1', 'Maria Self', { weeklyLimitMin: 600 }),
+              m('m2', 'Anna Beck', { weeklyLimitMin: 1200 }),
+              m('m3', 'Ben Null'),
+            ],
+      ),
+    );
+    renderWithOrg(<MembersPage />, MANAGER_ORG);
+    await screen.findByRole('table');
+    const header = (n: string) => screen.getByRole('columnheader', { name: n });
+    expect(header('Name')).toHaveAttribute('aria-sort', 'ascending');
+    expect(header('Weekly limit')).toHaveAttribute('aria-sort', 'none');
+    expect(bodyNames()).toEqual(['Anna ', 'Ben N', 'Maria']);
+    const button = within(header('Weekly limit')).getByRole('button', { name: 'Weekly limit' });
+    await userEvent.click(button);
+    expect(header('Weekly limit')).toHaveAttribute('aria-sort', 'ascending');
+    expect(header('Name')).toHaveAttribute('aria-sort', 'none');
+    expect(bodyNames()).toEqual(['Maria', 'Anna ', 'Ben N']);
+    await userEvent.click(button);
+    expect(header('Weekly limit')).toHaveAttribute('aria-sort', 'descending');
+    expect(bodyNames()).toEqual(['Anna ', 'Maria', 'Ben N']);
   });
 
   it('offers the right row actions', async () => {
@@ -177,6 +238,32 @@ describe('MembersPage', () => {
       'This person is already a member.',
     );
     expect(screen.getByRole('dialog')).toBeVisible();
+  });
+
+  it('closes the invite dialog when the refreshed member already has an email', async () => {
+    apiSend.mockRejectedValue(
+      new ApiError(409, {
+        error: { code: 'INVALID_TRANSITION', message: 'Already invited elsewhere.' },
+      }),
+    );
+    setup();
+    await screen.findByRole('table');
+    await userEvent.click(screen.getByRole('button', { name: 'Invite Tom Placeholder' }));
+    const dialog = await screen.findByRole('dialog');
+    // Someone else invited Tom meanwhile: the refreshed list now has his email.
+    apiFetch.mockImplementation((path: string) => {
+      if (path.includes('/skills')) return Promise.resolve([{ id: 'sk1', name: 'Barista' }]);
+      return Promise.resolve(
+        people
+          .filter((p) => p.status === 'ACTIVE')
+          .map((p) =>
+            p.id === 'm4' ? { ...p, email: 'tom@example.com', invitePending: true } : p,
+          ),
+      );
+    });
+    await userEvent.type(within(dialog).getByLabelText('Email'), 'tom@example.com');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Send invite' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   });
 
   it('cancels the invite dialog without a request', async () => {

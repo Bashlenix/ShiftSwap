@@ -1,4 +1,4 @@
-import type { NotificationDto, NotificationType } from '@shiftswap/shared';
+import type { NotificationDto, NotificationType } from './notifications';
 import { describe, expect, it } from 'vitest';
 import { notificationText } from './notification-text';
 

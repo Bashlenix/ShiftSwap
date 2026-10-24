@@ -3,6 +3,7 @@ import type { SkillDto } from '@shiftswap/shared';
 import { useRef, useState, type FormEvent } from 'react';
 import { Feedback } from '../../components/Feedback';
 import { Button } from '../../components/ui/button';
+import { Card } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
 import { ApiError, apiFetch, apiSend } from '../../lib/api';
 import { errorMessage } from '../../lib/error-messages';
@@ -44,7 +45,17 @@ export function SkillsSection() {
     );
   }
 
-  async function run(work: () => Promise<void>, done: string, onFail?: () => void) {
+  /** Focus an element once React has re-rendered the list; falls back to the heading. */
+  function focusLater(id: string) {
+    setTimeout(() => (document.getElementById(id) ?? headingRef.current)?.focus(), 0);
+  }
+
+  async function run(
+    work: () => Promise<void>,
+    done: string,
+    onFail?: () => void,
+    focusId?: string,
+  ) {
     setPending(true);
     setError(null);
     setNotice(null);
@@ -52,7 +63,8 @@ export function SkillsSection() {
       await work();
       await queryClient.invalidateQueries({ queryKey: ['skills', org.organizationId] });
       setNotice(done);
-      headingRef.current?.focus();
+      if (focusId) focusLater(focusId);
+      else headingRef.current?.focus();
     } catch (err) {
       setError(skillError(err));
       onFail?.();
@@ -73,142 +85,153 @@ export function SkillsSection() {
     e.preventDefault();
     if (!editing) return;
     const { id, name } = editing;
-    void run(async () => {
-      await apiSend('PATCH', orgApi(org, `/skills/${id}`), { name: name.trim() });
-      setEditing(null);
-    }, 'Skill renamed.');
+    void run(
+      async () => {
+        await apiSend('PATCH', orgApi(org, `/skills/${id}`), { name: name.trim() });
+        setEditing(null);
+      },
+      'Skill renamed.',
+      undefined,
+      `rename-skill-${id}`,
+    );
   }
 
   return (
-    <section aria-labelledby="skills-heading" className="flex flex-col gap-3">
-      <h2
-        id="skills-heading"
-        ref={headingRef}
-        tabIndex={-1}
-        className="text-xl font-semibold outline-none"
-      >
-        Skills
-      </h2>
-      <Feedback error={error} notice={notice} />
-      {skills.isError && <p role="alert">Could not load the skills. Please try again.</p>}
-      {skills.isPending && <p>Loading…</p>}
-      {skills.data && skills.data.length === 0 && <p>No skills yet.</p>}
-      {skills.data && skills.data.length > 0 && (
-        <ul aria-label="Skills" className="flex flex-col gap-2">
-          {skills.data.map((s) => (
-            <li key={s.id} className="flex flex-wrap items-center gap-2">
-              {editing?.id === s.id ? (
-                <form onSubmit={rename} className="flex flex-wrap items-center gap-2">
-                  <Input
-                    aria-label={`New name for ${s.name}`}
-                    className="w-56"
-                    maxLength={40}
-                    value={editing.name}
-                    onChange={(e) => setEditing({ id: s.id, name: e.target.value })}
-                  />
-                  <Button
-                    type="submit"
-                    className="h-8 px-3"
-                    disabled={pending}
-                    aria-label={`Save name for ${s.name}`}
-                  >
-                    Save
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-8 px-3"
-                    aria-label={`Cancel renaming ${s.name}`}
-                    onClick={() => setEditing(null)}
-                  >
-                    Cancel
-                  </Button>
-                </form>
-              ) : (
-                <>
-                  <span className="min-w-40">{s.name}</span>
-                  <Button
-                    variant="outline"
-                    className="h-8 px-3"
-                    disabled={pending}
-                    aria-label={`Rename ${s.name}`}
-                    onClick={() => {
-                      setError(null);
-                      setNotice(null);
-                      setEditing({ id: s.id, name: s.name });
-                    }}
-                  >
-                    Rename
-                  </Button>
-                  {confirming === s.id ? (
-                    <span
-                      role="group"
-                      aria-label={`Confirm deleting ${s.name}`}
-                      className="flex flex-wrap items-center gap-2"
+    <Card className="p-4 sm:p-6">
+      <section aria-labelledby="skills-heading" className="flex flex-col gap-3">
+        <h2
+          id="skills-heading"
+          ref={headingRef}
+          tabIndex={-1}
+          className="text-lg font-semibold tracking-tight outline-none"
+        >
+          Skills
+        </h2>
+        <Feedback error={error} notice={notice} />
+        {skills.isError && <p role="alert">Could not load the skills. Please try again.</p>}
+        {skills.isPending && <p>Loading…</p>}
+        {skills.data && skills.data.length === 0 && (
+          <p className="text-sm text-muted">No skills yet.</p>
+        )}
+        {skills.data && skills.data.length > 0 && (
+          <ul aria-label="Skills" className="flex flex-col gap-2">
+            {skills.data.map((s) => (
+              <li key={s.id} className="flex flex-wrap items-center gap-2">
+                {editing?.id === s.id ? (
+                  <form onSubmit={rename} className="flex flex-wrap items-center gap-2">
+                    <Input
+                      aria-label={`New name for ${s.name}`}
+                      className="w-56"
+                      maxLength={40}
+                      value={editing.name}
+                      onChange={(e) => setEditing({ id: s.id, name: e.target.value })}
+                    />
+                    <Button
+                      type="submit"
+                      className="h-8 px-3"
+                      disabled={pending}
+                      aria-label={`Save name for ${s.name}`}
                     >
-                      <span className="text-sm">
-                        Delete skill {s.name}? It will also be removed from people who have it.
-                      </span>
-                      <Button
-                        className="h-8 px-3"
-                        disabled={pending}
-                        onClick={() => {
-                          setConfirming(null);
-                          void run(
-                            () => apiSend('DELETE', orgApi(org, `/skills/${s.id}`)),
-                            'Skill deleted.',
-                            () => focusDelete(s.id),
-                          );
-                        }}
-                      >
-                        Yes, delete
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="h-8 px-3"
-                        onClick={() => {
-                          setConfirming(null);
-                          focusDelete(s.id);
-                        }}
-                      >
-                        Keep skill
-                      </Button>
-                    </span>
-                  ) : (
+                      Save
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-8 px-3"
+                      aria-label={`Cancel renaming ${s.name}`}
+                      onClick={() => setEditing(null)}
+                    >
+                      Cancel
+                    </Button>
+                  </form>
+                ) : (
+                  <>
+                    <span className="min-w-40">{s.name}</span>
                     <Button
                       variant="outline"
                       className="h-8 px-3"
                       disabled={pending}
-                      id={`delete-skill-${s.id}`}
-                      aria-label={`Delete ${s.name}`}
-                      onClick={() => setConfirming(s.id)}
+                      id={`rename-skill-${s.id}`}
+                      aria-label={`Rename ${s.name}`}
+                      onClick={() => {
+                        setError(null);
+                        setNotice(null);
+                        setEditing({ id: s.id, name: s.name });
+                      }}
                     >
-                      Delete
+                      Rename
                     </Button>
-                  )}
-                </>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      <form onSubmit={add} className="flex flex-wrap items-end gap-2">
-        <div className="flex flex-col gap-1">
-          <label htmlFor="new-skill" className="text-sm font-medium">
-            New skill name
-          </label>
-          <Input
-            id="new-skill"
-            className="w-56"
-            maxLength={40}
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-          />
-        </div>
-        <Button type="submit" disabled={pending || newName.trim() === ''}>
-          Add skill
-        </Button>
-      </form>
-    </section>
+                    {confirming === s.id ? (
+                      <span
+                        role="group"
+                        aria-label={`Confirm deleting ${s.name}`}
+                        className="flex flex-wrap items-center gap-2"
+                      >
+                        <span className="text-sm">
+                          Delete skill {s.name}? It will also be removed from people who have it.
+                        </span>
+                        <Button
+                          className="h-8 px-3"
+                          disabled={pending}
+                          onClick={() => {
+                            setConfirming(null);
+                            void run(
+                              () => apiSend('DELETE', orgApi(org, `/skills/${s.id}`)),
+                              'Skill deleted.',
+                              () => focusDelete(s.id),
+                              'new-skill',
+                            );
+                          }}
+                        >
+                          Yes, delete
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="h-8 px-3"
+                          onClick={() => {
+                            setConfirming(null);
+                            focusDelete(s.id);
+                          }}
+                        >
+                          Keep skill
+                        </Button>
+                      </span>
+                    ) : (
+                      <Button
+                        variant="outline"
+                        className="h-8 px-3"
+                        disabled={pending}
+                        id={`delete-skill-${s.id}`}
+                        aria-label={`Delete ${s.name}`}
+                        onClick={() => setConfirming(s.id)}
+                      >
+                        Delete
+                      </Button>
+                    )}
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        <form onSubmit={add} className="flex flex-wrap items-end gap-2">
+          <div className="flex flex-col gap-1">
+            <label htmlFor="new-skill" className="text-sm font-medium">
+              New skill name
+            </label>
+            <Input
+              id="new-skill"
+              className="w-56"
+              maxLength={40}
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+            />
+          </div>
+          <Button type="submit" disabled={pending || newName.trim() === ''}>
+            Add skill
+          </Button>
+        </form>
+      </section>
+    </Card>
   );
 }

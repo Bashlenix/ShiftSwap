@@ -72,7 +72,9 @@ describe('SkillsSection', () => {
       name: 'Barista II',
     });
     expect(await screen.findByText('Skill renamed.')).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Skills' })).toHaveFocus();
+    await vi.waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Rename Barista' })).toHaveFocus(),
+    );
   });
 
   it('cancels a rename', async () => {
@@ -94,7 +96,7 @@ describe('SkillsSection', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Yes, delete' }));
     expect(apiSend).toHaveBeenCalledWith('DELETE', '/api/v1/orgs/org-1/skills/s2');
     expect(await screen.findByText('Skill deleted.')).toBeVisible();
-    expect(screen.getByRole('heading', { name: 'Skills' })).toHaveFocus();
+    await vi.waitFor(() => expect(screen.getByLabelText('New skill name')).toHaveFocus());
   });
 
   it('keeps the skill when delete is not confirmed', async () => {

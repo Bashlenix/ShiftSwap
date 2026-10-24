@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import type { NotificationDto, NotificationPayload, NotificationType } from '@shiftswap/shared';
+import {
+  EMAIL_NOTIFICATION_TYPES,
+  type NotificationDto,
+  type NotificationPayload,
+  type NotificationType,
+} from '@shiftswap/shared';
 import { DomainError } from '../common/domain-error';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
@@ -113,12 +118,16 @@ export class NotificationsService {
       select: { id: true },
     });
     if (valid.length === 0) return 0;
+    // Outbox: email types stay pending (null) until the dispatcher claims them after commit;
+    // in-app-only types are born dispatched so they are never emailed.
+    const emailDispatchedAt = EMAIL_NOTIFICATION_TYPES.includes(type) ? null : new Date();
     const { count } = await tx.notification.createMany({
       data: valid.map((m) => ({
         organizationId: orgId,
         recipientMembershipId: m.id,
         type,
         payload: byRecipient.get(m.id) as Prisma.InputJsonObject,
+        emailDispatchedAt,
       })),
     });
     return count;

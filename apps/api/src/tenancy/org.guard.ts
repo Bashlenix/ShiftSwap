@@ -5,6 +5,7 @@ import type { AuthedRequest } from '../auth/session.guard';
 import { DomainError } from '../common/domain-error';
 import { PrismaService } from '../prisma/prisma.service';
 import { MIN_ACCESS_KEY } from './min-access.decorator';
+import { toOrgContext } from './org-context';
 import type { OrgRequest } from './org-context.decorator';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -48,20 +49,7 @@ export class OrgGuard implements CanActivate {
       throw new DomainError('FORBIDDEN', 'Insufficient access level');
     }
 
-    const org = membership.organization;
-    req.org = {
-      orgId,
-      membershipId: membership.id,
-      accessLevel: membership.accessLevel,
-      timezone: org.timezone,
-      policy: {
-        timezone: org.timezone,
-        defaultWeeklyLimitMin: org.defaultWeeklyLimitMin,
-        minRestMin: org.minRestMin,
-        maxDailyMin: org.maxDailyMin,
-      },
-      leadTimeMin: org.offerLeadTimeMin,
-    };
+    req.org = toOrgContext(membership);
     return true;
   }
 }

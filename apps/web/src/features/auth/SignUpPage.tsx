@@ -1,6 +1,7 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Feedback } from '../../components/Feedback';
+import { AuthLayout } from '../../components/AuthLayout';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
@@ -8,6 +9,7 @@ import { Label } from '../../components/ui/label';
 import { authClient } from '../../lib/auth-client';
 import { PASSWORD_ERROR, PASSWORD_HINT } from '../../lib/password-copy';
 import { safeNext, withNext } from '../../lib/safe-next';
+import { refreshSession } from '../../lib/session';
 import { isAlreadyRegistered } from '../../lib/sign-up-error';
 
 const GENERIC_FAILURE = 'Something went wrong. Please try again.';
@@ -66,6 +68,7 @@ export function SignUpPage() {
         );
         return;
       }
+      await refreshSession();
       await navigate(next);
     } catch {
       setFormError(GENERIC_FAILURE);
@@ -88,7 +91,7 @@ export function SignUpPage() {
   const fieldError = (f: Field) => (
     <div aria-live="polite">
       {errors[f] && (
-        <p id={`${f}-error`} className="text-sm text-red-700">
+        <p id={`${f}-error`} className="text-sm text-danger">
           {errors[f]}
         </p>
       )}
@@ -96,8 +99,8 @@ export function SignUpPage() {
   );
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md items-center p-4">
-      <Card className="w-full">
+    <AuthLayout>
+      <Card>
         <CardHeader>
           <CardTitle>Create your account</CardTitle>
         </CardHeader>
@@ -116,7 +119,7 @@ export function SignUpPage() {
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="password">Password</Label>
               <Input {...fieldProps('password')} type="password" autoComplete="new-password" />
-              <p id="password-hint" className="text-sm text-slate-700">
+              <p id="password-hint" className="text-sm text-muted">
                 {PASSWORD_HINT}
               </p>
               {fieldError('password')}
@@ -124,7 +127,7 @@ export function SignUpPage() {
             <Feedback error={formError} />
             {exists && (
               <p>
-                <Link className="font-medium text-indigo-800 underline" to={loginHref}>
+                <Link className="font-medium text-brand-strong underline" to={loginHref}>
                   Log in
                 </Link>
               </p>
@@ -135,12 +138,12 @@ export function SignUpPage() {
           </form>
           <p className="mt-4 text-sm">
             Already have an account?{' '}
-            <Link className="font-medium text-indigo-800 underline" to={loginHref}>
+            <Link className="font-medium text-brand-strong underline" to={loginHref}>
               Log in
             </Link>
           </p>
         </CardContent>
       </Card>
-    </main>
+    </AuthLayout>
   );
 }

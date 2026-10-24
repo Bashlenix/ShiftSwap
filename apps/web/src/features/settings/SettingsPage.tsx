@@ -3,9 +3,13 @@ import type { OrgDto, OrgSettingsInput } from '@shiftswap/shared';
 import { useState, type FormEvent } from 'react';
 import { Feedback } from '../../components/Feedback';
 import { Button } from '../../components/ui/button';
+import { Card } from '../../components/ui/card';
+import { controlClass } from '../../components/ui/control';
 import { Input } from '../../components/ui/input';
+import { PageHeader } from '../../components/ui/page-header';
 import { apiFetch, apiSend } from '../../lib/api';
 import { errorMessage } from '../../lib/error-messages';
+import { cn } from '../../lib/utils';
 import { orgApi, useOrg } from '../org/useOrg';
 import { SkillsSection } from './SkillsSection';
 
@@ -68,7 +72,7 @@ function Settings() {
   });
   return (
     <div className="flex flex-col gap-8">
-      <h1 className="text-2xl font-semibold">Settings</h1>
+      <PageHeader title="Settings" />
       {orgQuery.isError && <p role="alert">Could not load the settings. Please try again.</p>}
       {orgQuery.isPending && <p>Loading…</p>}
       {orgQuery.data && <SettingsForm initial={orgQuery.data} />}
@@ -136,70 +140,72 @@ function SettingsForm({ initial }: { initial: OrgDto }) {
 
   const field = 'flex max-w-md flex-col gap-1';
   return (
-    <form onSubmit={save} className="flex flex-col gap-4" aria-labelledby="org-settings-heading">
-      <h2 id="org-settings-heading" className="text-xl font-semibold">
-        Organisation
-      </h2>
-      <div className={field}>
-        <label htmlFor="org-name" className="text-sm font-medium">
-          Name
-        </label>
-        <Input
-          id="org-name"
-          value={name}
-          maxLength={80}
-          onChange={(e) => setName(e.target.value)}
-        />
-      </div>
-      <div className={field}>
-        <label htmlFor="org-timezone" className="text-sm font-medium">
-          Time zone
-        </label>
-        <select
-          id="org-timezone"
-          className="h-10 rounded-md border border-slate-400 bg-white px-2 text-sm"
-          value={timezone}
-          onChange={(e) => setTimezone(e.target.value)}
-        >
-          {zones.map((z) => (
-            <option key={z} value={z}>
-              {z}
-            </option>
-          ))}
-        </select>
-      </div>
-      {HOUR_FIELDS.map(({ key, label }) => (
-        <div key={key} className={field}>
-          <label htmlFor={`org-${key}`} className="text-sm font-medium">
-            {label}
+    <Card className="p-4 sm:p-6">
+      <form onSubmit={save} className="flex flex-col gap-4" aria-labelledby="org-settings-heading">
+        <h2 id="org-settings-heading" className="text-lg font-semibold tracking-tight">
+          Organisation
+        </h2>
+        <div className={field}>
+          <label htmlFor="org-name" className="text-sm font-medium">
+            Name
           </label>
           <Input
-            id={`org-${key}`}
-            type="number"
-            inputMode="decimal"
-            step="any"
-            aria-invalid={fieldErrors[key] ? true : undefined}
-            aria-describedby={fieldErrors[key] ? `org-${key}-error` : undefined}
-            value={hours[key]}
-            onChange={(e) => {
-              setHours({ ...hours, [key]: e.target.value });
-              setFieldErrors((prev) => ({ ...prev, [key]: undefined }));
-            }}
+            id="org-name"
+            value={name}
+            maxLength={80}
+            onChange={(e) => setName(e.target.value)}
           />
-          {fieldErrors[key] && (
-            <p id={`org-${key}-error`} role="alert" className="text-sm text-red-700">
-              {fieldErrors[key]}
-            </p>
-          )}
         </div>
-      ))}
-      <p className="text-sm text-slate-700">
-        These are company policy checks, not a legal compliance guarantee.
-      </p>
-      <Feedback error={error} notice={notice} />
-      <Button type="submit" className="self-start" disabled={pending}>
-        Save settings
-      </Button>
-    </form>
+        <div className={field}>
+          <label htmlFor="org-timezone" className="text-sm font-medium">
+            Time zone
+          </label>
+          <select
+            id="org-timezone"
+            className={cn(controlClass, 'h-11')}
+            value={timezone}
+            onChange={(e) => setTimezone(e.target.value)}
+          >
+            {zones.map((z) => (
+              <option key={z} value={z}>
+                {z}
+              </option>
+            ))}
+          </select>
+        </div>
+        {HOUR_FIELDS.map(({ key, label }) => (
+          <div key={key} className={field}>
+            <label htmlFor={`org-${key}`} className="text-sm font-medium">
+              {label}
+            </label>
+            <Input
+              id={`org-${key}`}
+              type="number"
+              inputMode="decimal"
+              step="any"
+              aria-invalid={fieldErrors[key] ? true : undefined}
+              aria-describedby={fieldErrors[key] ? `org-${key}-error` : undefined}
+              value={hours[key]}
+              onChange={(e) => {
+                setHours({ ...hours, [key]: e.target.value });
+                setFieldErrors((prev) => ({ ...prev, [key]: undefined }));
+              }}
+            />
+            {fieldErrors[key] && (
+              <p id={`org-${key}-error`} role="alert" className="text-sm text-danger">
+                {fieldErrors[key]}
+              </p>
+            )}
+          </div>
+        ))}
+        <p className="text-sm text-muted">
+          These are company policy checks, not a legal compliance guarantee.
+        </p>
+        <Feedback error={error} notice={notice} />
+        <Button type="submit" className="self-start" disabled={pending}>
+          Save settings
+        </Button>
+      </form>
+    </Card>
   );
 }

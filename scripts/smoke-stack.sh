@@ -41,6 +41,10 @@ logs_leak_emails() { grep -qiE 'shiftswap\.test' <<<"$1"; }
 # True (exit 0) when the text contains the given invite token verbatim.
 logs_leak_token() { grep -qF -- "$2" <<<"$1"; }
 
+# True (exit 0) when the text contains the redacted invite route. Positive control for
+# logs_leak_token: without it, "no token in the logs" could pass although nothing was logged.
+logs_show_redacted_invite() { grep -qF -- '/api/v1/invites/:token' <<<"$1"; }
+
 # Signs in Maria (admin of Café Lindenhof; Anna is an employee and may not add people).
 # Sign-in is rate limited per IP (3 per 10 s): on 429 wait for the window and retry once.
 admin_sign_in() {
@@ -127,6 +131,9 @@ main() {
     fail "api logs contain the invite token"
   fi
   pass "api logs contain no invite token"
+  logs_show_redacted_invite "$api_logs" \
+    && pass "api logs contain the redacted invite path" \
+    || fail "api logs lack /api/v1/invites/:token (the token check proves nothing)"
   echo "ALL CHECKS PASSED"
 }
 

@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import type { MemberDto } from '@shiftswap/shared';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Feedback } from '../../components/Feedback';
 import { Button } from '../../components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../components/ui/dialog';
@@ -41,6 +41,13 @@ function InviteForm({
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const inFlight = useRef(false);
+
+  // The list was refreshed and this member already has an email or a login (e.g. someone
+  // else invited them): the dialog is stale, so close it. Not while our own request runs;
+  // its handler reports the outcome.
+  useEffect(() => {
+    if (!pending && (member.email || member.hasLogin)) onClose();
+  }, [pending, member.email, member.hasLogin, onClose]);
 
   // A request is in flight: closing now would hide its outcome.
   const close = () => {

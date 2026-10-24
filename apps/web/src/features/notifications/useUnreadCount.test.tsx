@@ -37,4 +37,18 @@ describe('useUnreadCount', () => {
     await waitFor(() => expect(apiFetch).toHaveBeenCalled());
     expect(bad.result.current).toBe(0);
   });
+
+  it('keeps the last known count when a later poll fails', async () => {
+    apiFetch.mockResolvedValueOnce({ count: 4 });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const shared = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useUnreadCount('o1'), { wrapper: shared });
+    await waitFor(() => expect(result.current).toBe(4));
+    apiFetch.mockRejectedValue(new Error('network'));
+    await client.refetchQueries({ queryKey: ['notifications-unread', 'o1'] });
+    expect(apiFetch).toHaveBeenCalledTimes(2);
+    expect(result.current).toBe(4);
+  });
 });

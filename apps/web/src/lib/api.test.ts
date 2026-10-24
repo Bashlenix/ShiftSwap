@@ -14,6 +14,9 @@ function mockFetch(status: number, body?: unknown) {
 
 afterEach(() => vi.unstubAllGlobals());
 
+/** Every request names the app origin so the api can build email deep links (SDD §23). */
+const origin = { 'x-app-origin': window.location.origin };
+
 describe('api client', () => {
   it('parses code and details from an error body', async () => {
     mockFetch(422, {
@@ -28,6 +31,12 @@ describe('api client', () => {
     });
   });
 
+  it('apiFetch sends credentials and the x-app-origin header', async () => {
+    const fn = mockFetch(200, { ok: true });
+    await expect(apiFetch('/x')).resolves.toEqual({ ok: true });
+    expect(fn).toHaveBeenCalledWith('/x', { credentials: 'include', headers: origin });
+  });
+
   it('still throws ApiError when the error body is not JSON', async () => {
     mockFetch(502);
     const err = await apiFetch('/x').catch((e: unknown) => e);
@@ -40,7 +49,7 @@ describe('api client', () => {
     expect(fn).toHaveBeenCalledWith('/x', {
       method: 'POST',
       credentials: 'include',
-      headers: { 'content-type': 'application/json' },
+      headers: { ...origin, 'content-type': 'application/json' },
       body: '{"a":1}',
     });
   });
@@ -48,7 +57,11 @@ describe('api client', () => {
   it('apiSend returns undefined for 204 and sends no body when none given', async () => {
     const fn = mockFetch(204);
     await expect(apiSend('DELETE', '/x')).resolves.toBeUndefined();
-    expect(fn).toHaveBeenCalledWith('/x', { method: 'DELETE', credentials: 'include' });
+    expect(fn).toHaveBeenCalledWith('/x', {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: origin,
+    });
   });
 
   it('apiSend throws ApiError with parsed code', async () => {

@@ -67,6 +67,17 @@ describe('MyShiftsPage', () => {
     expect(call).toMatch(/from=\d{4}-\d\d-\d\dT[\d:.]+Z/);
   });
 
+  it('keeps the empty feedback live region from adding space under the header', async () => {
+    setup([shift('s1', 48)]);
+    renderWithOrg(<MyShiftsPage />);
+    await screen.findByText('Barista');
+    const region = document.querySelector('[aria-live="polite"][tabindex="-1"]')!;
+    expect(region).toBeEmptyDOMElement();
+    // Collapses when empty (cancels the gap-4 above it) instead of reserving min-h-6.
+    expect(region).toHaveClass('empty:-mt-4');
+    expect(region).not.toHaveClass('min-h-6');
+  });
+
   it('offers a shift after confirming in a dialog', async () => {
     setup([shift('s1', 48)]);
     renderWithOrg(<MyShiftsPage />);

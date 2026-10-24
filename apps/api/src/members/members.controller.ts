@@ -40,12 +40,12 @@ export class MembersController {
 
   @Get()
   list(@Org() org: OrgContext, @Query('status') status?: string): Promise<MemberDto[]> {
-    if (status !== undefined && status !== 'active' && status !== 'all') {
+    if (status !== undefined && !['active', 'deactivated', 'all'].includes(status)) {
       throw new DomainError('VALIDATION_FAILED', 'Request validation failed', {
-        issues: [{ path: 'status', message: 'Use active or all' }],
+        issues: [{ path: 'status', message: 'Use active, deactivated or all' }],
       });
     }
-    return this.members.list(org.orgId, status === 'all' ? 'all' : 'active');
+    return this.members.list(org.orgId, (status as 'active' | 'deactivated' | 'all') ?? 'active');
   }
 
   @Post()

@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import type { PreferenceEntry } from '@shiftswap/shared';
 import { Prisma, type PrismaClient } from '../generated/prisma/client';
 import type { OrgContext } from '../tenancy/org-context.decorator';
+import { preferenceForShift } from './preference';
+import type { Preference } from './ranking';
 import { durationMin, weekWindow } from './time';
 import type { EligibilityContext, TargetShift } from './types';
 
@@ -11,6 +14,7 @@ export interface LoadedCandidate {
   ctx: EligibilityContext;
   swapsLast30Days: number;
   weeklyMinutes: number;
+  preference: Preference;
 }
 
 interface MemberRow {
@@ -19,6 +23,7 @@ interface MemberRow {
   status: 'ACTIVE' | 'DEACTIVATED';
   weeklyLimitMin: number | null;
   skillIds: string[];
+  preferences: PreferenceEntry[];
 }
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -69,7 +74,9 @@ export class EligibilityLoader {
     const members = await db.$queryRaw<MemberRow[]>(Prisma.sql`
       SELECT m.id, m.user_id AS "userId", m.status::text AS status,
              m.weekly_limit_min AS "weeklyLimitMin",
-             COALESCE(array_agg(ms.skill_id) FILTER (WHERE ms.skill_id IS NOT NULL), '{}') AS "skillIds"
+             COALESCE(array_agg(ms.skill_id) FILTER (WHERE ms.skill_id IS NOT NULL), '{}') AS "skillIds",
+             COALESCE((SELECT json_agg(json_build_object('weekday', p.weekday, 'slot', p.slot, 'value', p.value))
+                       FROM preferences p WHERE p.membership_id = m.id), '[]') AS "preferences"
       FROM memberships m
       LEFT JOIN membership_skills ms ON ms.membership_id = m.id
       WHERE m.organization_id = ${org.orgId} AND ${scope}
@@ -143,6 +150,7 @@ export class EligibilityLoader {
         },
         swapsLast30Days: swapsBy.get(m.id) ?? 0,
         weeklyMinutes,
+        preference: preferenceForShift(m.preferences, shift, org.timezone),
       });
     }
     return result;
