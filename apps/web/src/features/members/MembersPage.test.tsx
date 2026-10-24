@@ -76,6 +76,15 @@ describe('MembersPage', () => {
     expect(screen.queryByText('Dora Gone')).not.toBeInTheDocument();
   });
 
+  it('keeps the empty feedback live region from adding space under the header', async () => {
+    setup();
+    await screen.findByRole('table', { name: 'People in Café Lindenhof' });
+    const region = document.querySelector('[aria-live="polite"][tabindex="-1"]')!;
+    expect(region).toBeEmptyDOMElement();
+    expect(region).toHaveClass('empty:-mt-4');
+    expect(region).not.toHaveClass('min-h-6');
+  });
+
   it('shows deactivated people when asked', async () => {
     setup();
     await screen.findByRole('table');

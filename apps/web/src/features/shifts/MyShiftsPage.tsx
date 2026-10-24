@@ -78,7 +78,7 @@ export function MyShiftsPage() {
           title="My shifts"
           description="Your shifts for the next 14 days."
         />
-        <Feedback error={error} notice={notice} containerRef={feedbackRef} />
+        <Feedback error={error} notice={notice} containerRef={feedbackRef} collapse />
         {shifts.isPending && <p>Loading…</p>}
         {shifts.isError && <p role="alert">Could not load your shifts. Please try again.</p>}
         {shifts.data?.length === 0 && (

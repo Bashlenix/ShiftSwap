@@ -234,7 +234,7 @@ function MembersTable() {
           </>
         }
       />
-      <Feedback error={error} notice={notice} containerRef={feedbackRef} />
+      <Feedback error={error} notice={notice} containerRef={feedbackRef} collapse />
       {invite && <InviteResult email={invite.email} link={invite.link} containerRef={inviteRef} />}
       {members.isError && <p role="alert">Could not load the members. Please try again.</p>}
       {members.isPending && <p>Loading…</p>}
