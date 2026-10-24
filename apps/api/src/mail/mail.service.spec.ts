@@ -21,7 +21,7 @@ describe('MailService', () => {
     process.env.MAIL_TRANSPORT = 'json';
     const mail = new MailService();
     await mail.send(msg);
-    expect(mail.sent).toEqual([{ to: msg.to, subject: 'Hello', text: 'Body' }]);
+    expect(mail.sent).toEqual([{ to: msg.to, subject: 'Hello', text: 'Body', html: msg.html }]);
   });
 
   it('resolves and warns without the address when SMTP is unreachable', async () => {

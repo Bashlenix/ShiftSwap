@@ -19,7 +19,7 @@ export class MailService {
   private readonly capture: boolean;
 
   /** Messages captured by the json transport (tests only). */
-  readonly sent: Array<{ to: string; subject: string; text: string }> = [];
+  readonly sent: Array<{ to: string; subject: string; text: string; html: string }> = [];
 
   constructor() {
     const env = process.env;
@@ -48,7 +48,7 @@ export class MailService {
         text: msg.text,
         html: msg.html,
       });
-      if (this.capture) this.sent.push({ to: msg.to, subject: msg.subject, text: msg.text });
+      if (this.capture) this.sent.push({ to: msg.to, subject: msg.subject, text: msg.text, html: msg.html });
     } catch {
       this.logger.warn({ kind: msg.kind, recipientMembershipId: msg.recipientMembershipId });
     }

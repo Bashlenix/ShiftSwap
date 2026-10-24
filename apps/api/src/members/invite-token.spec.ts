@@ -16,9 +16,7 @@ describe('invite token', () => {
 
   describe('inviteLink', () => {
     it('uses a trusted appOrigin', () => {
-      expect(inviteLink('http://localhost:5173', {}, 'T')).toBe(
-        'http://localhost:5173/invites/T',
-      );
+      expect(inviteLink('http://localhost:5173', {}, 'T')).toBe('http://localhost:5173/invites/T');
     });
     it('falls back to localhost for an untrusted or missing origin', () => {
       expect(inviteLink('https://evil.example', {}, 'T')).toBe('http://localhost:5173/invites/T');

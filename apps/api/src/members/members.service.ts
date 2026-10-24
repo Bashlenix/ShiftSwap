@@ -13,6 +13,8 @@ import type { Membership, Prisma } from '../generated/prisma/client';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { OrgContext } from '../tenancy/org-context.decorator';
+import { lockMembership } from '../offers/offer-locks';
+import { lockMemberAndAdmins } from './admin-locks';
 import { buildInviteMail } from './invite-mail';
 import { INVITE_TTL_MS, inviteLink, newInviteToken } from './invite-token';
 
@@ -118,28 +120,32 @@ export class MembersService {
     });
   }
 
-  async update(org: OrgContext, membershipId: string, input: UpdateMemberInput): Promise<MemberDto> {
+  async update(
+    org: OrgContext,
+    membershipId: string,
+    input: UpdateMemberInput,
+  ): Promise<MemberDto> {
     return this.prisma.$transaction(async (tx) => {
-      const rows = await tx.$queryRaw<{ id: string }[]>`
-        SELECT id FROM "memberships" WHERE id = ${membershipId} AND organization_id = ${org.orgId} FOR NO KEY UPDATE`;
-      if (rows.length === 0) throw notFound();
-      const current = await tx.membership.findUniqueOrThrow({ where: { id: membershipId } });
-
-      const changesLevel = input.accessLevel !== undefined && input.accessLevel !== current.accessLevel;
-      if (changesLevel) {
-        if (org.accessLevel !== 'ADMIN') {
-          throw new DomainError('FORBIDDEN', 'Only an admin can change access levels');
-        }
-        if (current.accessLevel === 'ADMIN' && current.status === 'ACTIVE') {
-          // Lock every active admin so two concurrent demotions cannot both pass.
-          const admins = await tx.$queryRaw<{ id: string }[]>`
-            SELECT id FROM "memberships"
-            WHERE organization_id = ${org.orgId} AND access_level = 'ADMIN' AND status = 'ACTIVE'
-            ORDER BY id FOR NO KEY UPDATE`;
-          if (admins.length <= 1) {
+      const levelRequested = input.accessLevel !== undefined;
+      let current: Membership;
+      if (levelRequested) {
+        const locked = await lockMemberAndAdmins(tx, org.orgId, membershipId);
+        current = locked.target;
+        if (input.accessLevel !== current.accessLevel) {
+          if (org.accessLevel !== 'ADMIN') {
+            throw new DomainError('FORBIDDEN', 'Only an admin can change access levels');
+          }
+          if (
+            current.accessLevel === 'ADMIN' &&
+            current.status === 'ACTIVE' &&
+            locked.activeAdminIds.length <= 1
+          ) {
             throw new DomainError('LAST_ADMIN', 'The last admin cannot be demoted');
           }
         }
+      } else {
+        await lockMembership(tx, org.orgId, membershipId);
+        current = await tx.membership.findUniqueOrThrow({ where: { id: membershipId } });
       }
       if (input.skillIds) await this.assertSkills(tx, org.orgId, input.skillIds);
 
@@ -190,9 +196,7 @@ export class MembersService {
     input: ResendInviteInput,
   ): Promise<{ inviteLink: string }> {
     return withAfterCommit(this.prisma, async (tx, after) => {
-      const rows = await tx.$queryRaw<{ id: string }[]>`
-        SELECT id FROM "memberships" WHERE id = ${membershipId} AND organization_id = ${org.orgId} FOR NO KEY UPDATE`;
-      if (rows.length === 0) throw notFound();
+      await lockMembership(tx, org.orgId, membershipId);
       const m = await tx.membership.findUniqueOrThrow({ where: { id: membershipId } });
       if (!m.email || m.userId !== null || m.status !== 'ACTIVE') {
         throw new DomainError(

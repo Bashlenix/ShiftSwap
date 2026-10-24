@@ -66,20 +66,20 @@ describe('members API (FR-02, FR-03)', () => {
     expect(sent[0].to).toBe(addr.toLowerCase());
     expect(sent[0].subject).toBe("You're invited to Cafe Nord on ShiftSwap");
     expect(sent[0].text).toContain(link);
+    expect(sent[0].html).toContain(link);
     expect(sent[0].text).toMatch(/This link expires on \d{1,2} [A-Z][a-z]{2} \d{4}/);
 
     const token = tokenOf(link);
-    const invites = await ctx.prisma.$queryRawUnsafe<Record<string, unknown>[]>(
-      'SELECT * FROM "invites"',
-    );
+    const invites =
+      await ctx.prisma.$queryRawUnsafe<Record<string, unknown>[]>('SELECT * FROM "invites"');
     expect(JSON.stringify(invites)).not.toContain(token);
     const invite = await ctx.prisma.invite.findFirstOrThrow({
       where: { membershipId: res.body.member.id },
     });
     expect(invite.tokenHash).toMatch(/^[0-9a-f]{64}$/);
-    expect(Math.abs(invite.expiresAt.getTime() - invite.createdAt.getTime() - 7 * 86400_000)).toBeLessThan(
-      5000,
-    );
+    expect(
+      Math.abs(invite.expiresAt.getTime() - invite.createdAt.getTime() - 7 * 86400_000),
+    ).toBeLessThan(5000);
 
     const audit = await ctx.prisma.auditLog.findFirstOrThrow({
       where: { organizationId: orgId, action: 'invite.created' },
@@ -121,10 +121,12 @@ describe('members API (FR-02, FR-03)', () => {
       .post(url())
       .send({ displayName: 'D1', email: addr });
     expect(first.status).toBe(201);
+    const mailsBefore = mail().sent.length;
     const dup = await api(app, manager.cookie)
       .post(url())
       .send({ displayName: 'D2', email: addr.toUpperCase() });
     expect(dup.status).toBe(409);
+    expect(mail().sent).toHaveLength(mailsBefore);
     expect(dup.body.error.code).toBe('ALREADY_MEMBER');
 
     await ctx.prisma.membership.update({
@@ -142,10 +144,12 @@ describe('members API (FR-02, FR-03)', () => {
   it('403 for an employee; 403 for a manager creating an ADMIN; ADMIN may', async () => {
     const asEmp = await api(app, employee.cookie).post(url()).send({ displayName: 'X' });
     expect(asEmp.status).toBe(403);
+    const mailsBefore = mail().sent.length;
     const mgr = await api(app, manager.cookie)
       .post(url())
-      .send({ displayName: 'X', accessLevel: 'ADMIN' });
+      .send({ displayName: 'X', accessLevel: 'ADMIN', email: email() });
     expect(mgr.status).toBe(403);
+    expect(mail().sent).toHaveLength(mailsBefore);
     const adm = await api(app, admin.cookie)
       .post(url())
       .send({ displayName: 'Ada Admin', accessLevel: 'ADMIN' });
@@ -163,6 +167,12 @@ describe('members API (FR-02, FR-03)', () => {
       .send({ displayName: 'S', skillIds: [foreign.id] });
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('400 VALIDATION_FAILED for an unknown status filter', async () => {
+    const res = await api(app, manager.cookie).get(url('?status=bogus'));
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION_FAILED');
   });
 
   it('lists members sorted by name with invitePending; status filter', async () => {
@@ -198,8 +208,12 @@ describe('members API (FR-02, FR-03)', () => {
 
   describe('PATCH', () => {
     it('updates name, limit and replaces skills; audits', async () => {
-      const s1 = await ctx.prisma.skill.create({ data: { organizationId: orgId, name: `S1-${n++}` } });
-      const s2 = await ctx.prisma.skill.create({ data: { organizationId: orgId, name: `S2-${n++}` } });
+      const s1 = await ctx.prisma.skill.create({
+        data: { organizationId: orgId, name: `S1-${n++}` },
+      });
+      const s2 = await ctx.prisma.skill.create({
+        data: { organizationId: orgId, name: `S2-${n++}` },
+      });
       const c = await api(app, manager.cookie)
         .post(url())
         .send({ displayName: 'Pat', skillIds: [s1.id] });
@@ -233,6 +247,9 @@ describe('members API (FR-02, FR-03)', () => {
         where: { id: mine.body.member.id },
       });
       expect(unchanged.displayName).toBe('Q');
+      expect(
+        await ctx.prisma.membershipSkill.count({ where: { membershipId: mine.body.member.id } }),
+      ).toBe(0);
       const other404 = await api(app, manager.cookie)
         .patch(url(`/${foreignMember.membershipId}`))
         .send({ displayName: 'Hax' });
@@ -251,6 +268,49 @@ describe('members API (FR-02, FR-03)', () => {
       await api(app, admin.cookie)
         .patch(url(`/${employee.membershipId}`))
         .send({ accessLevel: 'EMPLOYEE' });
+    });
+
+    it('a manager cannot promote themselves or demote an admin', async () => {
+      const self = await api(app, manager.cookie)
+        .patch(url(`/${manager.membershipId}`))
+        .send({ accessLevel: 'ADMIN' });
+      expect(self.status).toBe(403);
+      const demote = await api(app, manager.cookie)
+        .patch(url(`/${admin.membershipId}`))
+        .send({ accessLevel: 'EMPLOYEE' });
+      expect(demote.status).toBe(403);
+    });
+
+    it('two admins demoting each other in parallel: exactly one wins, never a 500', async () => {
+      for (let round = 0; round < 5; round++) {
+        const { orgId: o } = await makeOrg(ctx.prisma);
+        const a = await makeMember(ctx, o, { accessLevel: 'ADMIN' });
+        const b = await makeMember(ctx, o, { accessLevel: 'ADMIN' });
+        const patch = (cookie: string | undefined, id: string) =>
+          api(app, cookie)
+            .patch(`/api/v1/orgs/${o}/members/${id}`)
+            .send({ accessLevel: 'MANAGER' });
+        const res = await Promise.all([
+          patch(a.cookie, b.membershipId),
+          patch(b.cookie, a.membershipId),
+        ]);
+        expect(res.map((r) => r.status).sort()).toEqual([200, 409]);
+        expect(res.find((r) => r.status === 409)!.body.error.code).toBe('LAST_ADMIN');
+      }
+    });
+
+    it('with three admins both parallel demotions succeed', async () => {
+      const { orgId: o } = await makeOrg(ctx.prisma);
+      const a = await makeMember(ctx, o, { accessLevel: 'ADMIN' });
+      const b = await makeMember(ctx, o, { accessLevel: 'ADMIN' });
+      await makeMember(ctx, o, { accessLevel: 'ADMIN' });
+      const patch = (cookie: string | undefined, id: string) =>
+        api(app, cookie).patch(`/api/v1/orgs/${o}/members/${id}`).send({ accessLevel: 'MANAGER' });
+      const res = await Promise.all([
+        patch(a.cookie, b.membershipId),
+        patch(b.cookie, a.membershipId),
+      ]);
+      expect(res.map((r) => r.status)).toEqual([200, 200]);
     });
 
     it('409 LAST_ADMIN when demoting the only active admin', async () => {
@@ -277,7 +337,9 @@ describe('members API (FR-02, FR-03)', () => {
         await ctx.prisma.invite.findFirstOrThrow({ where: { membershipId: c.body.member.id } })
       ).tokenHash;
       const before = mail().sent.length;
-      const res = await api(app, manager.cookie).post(url(`/${c.body.member.id}/invite`)).send({});
+      const res = await api(app, manager.cookie)
+        .post(url(`/${c.body.member.id}/invite`))
+        .send({});
       expect(res.status).toBe(201);
       expect(res.body.inviteLink).toMatch(/\/invites\/[A-Za-z0-9_-]{43}$/);
       expect(res.body.inviteLink).not.toBe(c.body.inviteLink);
@@ -294,7 +356,9 @@ describe('members API (FR-02, FR-03)', () => {
 
     it('409 INVALID_TRANSITION for a placeholder without email or a member with a login', async () => {
       const ph = await api(app, manager.cookie).post(url()).send({ displayName: 'NoMail' });
-      const r1 = await api(app, manager.cookie).post(url(`/${ph.body.member.id}/invite`)).send({});
+      const r1 = await api(app, manager.cookie)
+        .post(url(`/${ph.body.member.id}/invite`))
+        .send({});
       expect(r1.status).toBe(409);
       expect(r1.body.error.code).toBe('INVALID_TRANSITION');
       const r2 = await api(app, manager.cookie)
@@ -307,7 +371,9 @@ describe('members API (FR-02, FR-03)', () => {
     it('404 for another org membership', async () => {
       const other = await makeOrg(ctx.prisma);
       const m = await makeMember(ctx, other.orgId, { accessLevel: 'EMPLOYEE', withLogin: false });
-      const res = await api(app, manager.cookie).post(url(`/${m.membershipId}/invite`)).send({});
+      const res = await api(app, manager.cookie)
+        .post(url(`/${m.membershipId}/invite`))
+        .send({});
       expect(res.status).toBe(404);
     });
   });

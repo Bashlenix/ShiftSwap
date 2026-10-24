@@ -20,6 +20,7 @@ import {
   type UpdateMemberInput,
 } from '@shiftswap/shared';
 import { SessionGuard } from '../auth/session.guard';
+import { DomainError } from '../common/domain-error';
 import { ZodBody } from '../common/zod-body.pipe';
 import { MinAccess } from '../tenancy/min-access.decorator';
 import { Org, type OrgContext } from '../tenancy/org-context.decorator';
@@ -34,6 +35,11 @@ export class MembersController {
 
   @Get()
   list(@Org() org: OrgContext, @Query('status') status?: string): Promise<MemberDto[]> {
+    if (status !== undefined && status !== 'active' && status !== 'all') {
+      throw new DomainError('VALIDATION_FAILED', 'Request validation failed', {
+        issues: [{ path: 'status', message: 'Use active or all' }],
+      });
+    }
     return this.members.list(org.orgId, status === 'all' ? 'all' : 'active');
   }
 
