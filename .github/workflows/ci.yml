@@ -90,7 +90,7 @@ jobs:
       - name: Web and Mailpit reachable from the workspace container
         run: |
           npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . node -e "fetch('http://localhost:5173/login').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
-          npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . node -e "fetch('http://mailpit:8025/').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+          npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . node -e "fetch('http://mailpit:8025/mailpit/').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
       - name: Debug tooling works in the workspace container (docker compose logs, sshd)
         run: |
           npx --yes @devcontainers/cli@0.89.0 exec --workspace-folder . docker compose logs --tail 5 api
