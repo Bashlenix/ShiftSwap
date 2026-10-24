@@ -26,3 +26,16 @@ export async function lockMemberAndAdmins(
     .map((r) => r.id);
   return { target, activeAdminIds };
 }
+
+/**
+ * Locks the member's open (not accepted, not revoked) invites ascending by id. Invite locks
+ * come BEFORE any membership lock: accepting an invite locks invite -> membership, so every
+ * path that touches a member's invites (deactivation, re-sending) must take them first.
+ */
+export async function lockOpenInvites(tx: Tx, orgId: string, membershipId: string): Promise<void> {
+  await tx.$queryRaw`
+    SELECT id FROM "invites"
+     WHERE organization_id = ${orgId} AND membership_id = ${membershipId}
+       AND accepted_at IS NULL AND revoked_at IS NULL
+     ORDER BY id FOR UPDATE`;
+}

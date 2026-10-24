@@ -119,18 +119,25 @@ export class OffersService {
   }
 
   /**
-   * Scheduler sweep over all orgs (system job): one conditional UPDATE expires every OPEN offer
-   * that is due, then PENDING -> NOT_SELECTED and an `offer.expired` audit row per offer, all in
-   * one transaction. An approve holding the offer lock makes the UPDATE wait; READ COMMITTED
-   * then re-evaluates `status = 'OPEN'` on the committed row, so an approved offer is skipped.
+   * Scheduler sweep over all orgs (system job): locks every due OPEN offer ascending by id with
+   * SKIP LOCKED, expires exactly those with a conditional UPDATE, then PENDING -> NOT_SELECTED
+   * and an `offer.expired` audit row per offer, all in one transaction. Taking the locks in id
+   * order (like deactivation and the lead-time recompute) avoids deadlocks; an offer whose lock
+   * is held (e.g. an approve in progress) is skipped and left to the next sweep or lazy expiry.
    */
   async expireDue(now: Date): Promise<number> {
     return this.prisma.$transaction(async (tx) => {
-      const rows = await tx.$queryRaw<{ id: string; organization_id: string }[]>`
+      const due = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM "offers"
+         WHERE status = 'OPEN' AND expires_at <= ${now}
+         ORDER BY id FOR UPDATE SKIP LOCKED`;
+      if (due.length === 0) return 0;
+      const updated = await tx.$queryRaw<{ id: string; organization_id: string }[]>`
         UPDATE "offers"
            SET status = 'EXPIRED', version = version + 1, resolved_at = ${now}, updated_at = ${now}
-         WHERE status = 'OPEN' AND expires_at <= ${now}
+         WHERE id = ANY(${due.map((r) => r.id)}::text[]) AND status = 'OPEN'
         RETURNING id, organization_id`;
+      const rows = [...updated].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       const managersByOrg = new Map<string, string[]>();
       for (const row of rows) {
         const after = await tx.offer.findUniqueOrThrow({ where: { id: row.id } });

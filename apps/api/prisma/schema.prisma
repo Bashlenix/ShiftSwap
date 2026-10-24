@@ -159,6 +159,8 @@ enum AcceptanceStatus {
   INVALIDATED
 }
 
+// SQL-only unique index (not expressible in Prisma): skills_organization_id_lower_name_key on
+// (organization_id, lower(name)). Lives in migration *_skills_name_ci; future migrations must not drop it.
 model Skill {
   id             String            @id @default(uuid())
   organizationId String            @map("organization_id")

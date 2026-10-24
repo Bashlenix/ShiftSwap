@@ -4,13 +4,14 @@ import { METHOD_METADATA, PATH_METADATA } from '@nestjs/common/constants';
 import { DiscoveryService, MetadataScanner, ModulesContainer } from '@nestjs/core';
 import { api, createTestApp, makeMember, makeOrg, type TestCtx } from './helpers/test-app';
 
-type Actor = 'manager' | 'employee' | 'employee2';
+type Actor = 'admin' | 'manager' | 'employee' | 'employee2';
 type Params = {
   orgId: string;
   shiftId: string;
   offerId: string;
   id: string;
   membershipId: string;
+  skillId: string;
 };
 
 /** One concrete request; built fresh (own scratch entities) by each row's `setup`. */
@@ -35,6 +36,8 @@ interface Row {
   expected: number;
   /** Rejected with 403 for an EMPLOYEE (MANAGER-only route). */
   managerOnly: boolean;
+  /** Also rejected with 403 for a MANAGER (ADMIN-only route). */
+  adminOnly?: boolean;
   /** Builds a fresh, valid request against org A's own entities. */
   setup: (f: Fixture) => Promise<Req>;
   foreign: Variant[];
@@ -79,7 +82,24 @@ describe('tenancy and permission sweep', () => {
   let app: INestApplication;
   let f: Fixture;
 
-  const base = (): Params => ({ orgId: f.a.orgId, shiftId: '', offerId: '', id: '', membershipId: '' });
+  const base = (): Params => ({
+    orgId: f.a.orgId,
+    shiftId: '',
+    offerId: '',
+    id: '',
+    membershipId: '',
+    skillId: '',
+  });
+  const mkSkill = async () =>
+    (
+      await ctx.prisma.skill.create({
+        data: { organizationId: f.a.orgId, name: `Scratch Skill ${Date.now()}-${slotCounter++}` },
+      })
+    ).id;
+  const skillB: Variant = {
+    name: 'skillId of org B',
+    mutate: (r, fx) => ({ ...r, params: { ...r.params, skillId: fx.b.skillId } }),
+  };
 
   const mkPlaceholder = (withEmail: boolean) =>
     ctx.prisma.membership.create({
@@ -137,6 +157,16 @@ describe('tenancy and permission sweep', () => {
       expected: 200,
       managerOnly: false,
       setup: async () => ({ params: base() }),
+      foreign: [],
+    },
+    {
+      route: 'PATCH orgs/:orgId',
+      actor: 'admin',
+      expected: 200,
+      managerOnly: true,
+      adminOnly: true,
+      // Name only: changing policies here would affect the other rows.
+      setup: async () => ({ params: base(), body: { name: `Sweep Org ${slotCounter++}` } }),
       foreign: [],
     },
     {
@@ -244,6 +274,36 @@ describe('tenancy and permission sweep', () => {
       managerOnly: false,
       setup: async () => ({ params: base() }),
       foreign: [],
+    },
+    {
+      route: 'POST orgs/:orgId/skills',
+      actor: 'admin',
+      expected: 201,
+      managerOnly: true,
+      adminOnly: true,
+      setup: async () => ({ params: base(), body: { name: `Sweep Skill ${slotCounter++}` } }),
+      foreign: [],
+    },
+    {
+      route: 'PATCH orgs/:orgId/skills/:skillId',
+      actor: 'admin',
+      expected: 200,
+      managerOnly: true,
+      adminOnly: true,
+      setup: async () => ({
+        params: { ...base(), skillId: await mkSkill() },
+        body: { name: `Renamed Skill ${slotCounter++}` },
+      }),
+      foreign: [skillB],
+    },
+    {
+      route: 'DELETE orgs/:orgId/skills/:skillId',
+      actor: 'admin',
+      expected: 204,
+      managerOnly: true,
+      adminOnly: true,
+      setup: async () => ({ params: { ...base(), skillId: await mkSkill() } }),
+      foreign: [skillB],
     },
     {
       route: 'GET orgs/:orgId/shifts',
@@ -481,6 +541,7 @@ describe('tenancy and permission sweep', () => {
     const { prisma } = ctx;
     const orgA = await makeOrg(prisma);
     const orgB = await makeOrg(prisma);
+    const aAdmin = await makeMember(ctx, orgA.orgId, { accessLevel: 'ADMIN' });
     const aMgr = await makeMember(ctx, orgA.orgId, { accessLevel: 'MANAGER' });
     const aEmp = await makeMember(ctx, orgA.orgId, { accessLevel: 'EMPLOYEE' });
     const aEmp2 = await makeMember(ctx, orgA.orgId, { accessLevel: 'EMPLOYEE' });
@@ -538,7 +599,12 @@ describe('tenancy and permission sweep', () => {
         skillId: bSkill.id,
         employeeId: bEmp.membershipId,
       },
-      cookies: { manager: aMgr.cookie!, employee: aEmp.cookie!, employee2: aEmp2.cookie! },
+      cookies: {
+        admin: aAdmin.cookie!,
+        manager: aMgr.cookie!,
+        employee: aEmp.cookie!,
+        employee2: aEmp2.cookie!,
+      },
     };
   });
   afterAll(async () => {
@@ -552,6 +618,7 @@ describe('tenancy and permission sweep', () => {
       .replace(':shiftId', req.params.shiftId)
       .replace(':offerId', req.params.offerId)
       .replace(':membershipId', req.params.membershipId)
+      .replace(':skillId', req.params.skillId)
       .replace(':id', req.params.id);
     const client = api(app, cookie);
     const call = {
@@ -627,6 +694,12 @@ describe('tenancy and permission sweep', () => {
     if (row.managerOnly) {
       it('403 for an EMPLOYEE on a MANAGER route', async () => {
         expect((await send(row, f.cookies.employee, await row.setup(f))).status).toBe(403);
+      });
+    }
+
+    if (row.adminOnly) {
+      it('403 for a MANAGER on an ADMIN route', async () => {
+        expect((await send(row, f.cookies.manager, await row.setup(f))).status).toBe(403);
       });
     }
 

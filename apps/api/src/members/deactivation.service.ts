@@ -16,7 +16,7 @@ import { OffersService } from '../offers/offers.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SHIFT_INCLUDE, toAuditSnapshot } from '../shifts/shift-mapper';
 import type { OrgContext } from '../tenancy/org-context.decorator';
-import { lockMemberAndAdmins } from './admin-locks';
+import { lockMemberAndAdmins, lockOpenInvites } from './admin-locks';
 import { toMemberDto } from './members.service';
 
 type Tx = Prisma.TransactionClient;
@@ -52,12 +52,13 @@ interface Affected {
 /**
  * Member deactivation with offer conversion (FR-15, SDD §17) and reactivation.
  *
- * Lock order offer -> shift -> membership (SDD §25): the affected rows are read unlocked, then
- * locked (offers ascending, shifts ascending, then target + active admins in one ordered
- * statement), then read again. A row that appeared in between (e.g. a claim committed by the
- * member) is not locked yet, so the transaction is retried before anything is written. Once the
- * membership row is held, approve/accept/claim for the member block on it and afterwards see
- * the member as DEACTIVATED.
+ * Lock order invite -> offer -> shift -> membership (SDD §25): the member's open invites are
+ * locked first (accepting an invite locks invite -> membership), then the affected rows are
+ * read unlocked and locked (offers ascending, shifts ascending, then target + active admins in
+ * one ordered statement), then read again. A row that appeared in between (e.g. a claim
+ * committed by the member) is not locked yet, so the transaction is retried before anything is
+ * written. Once the membership row is held, approve/accept/claim for the member block on it
+ * and afterwards see the member as DEACTIVATED.
  */
 @Injectable()
 export class DeactivationService {
@@ -147,7 +148,9 @@ export class DeactivationService {
     membershipId: string,
     now: Date,
   ): Promise<DeactivationResult | typeof RETRY> {
-    // 1. Unlocked read of the affected set, then lock offer -> shift -> membership.
+    // 1. Open invites first; then an unlocked read of the affected set and the
+    //    offer -> shift -> membership locks.
+    await lockOpenInvites(tx, org.orgId, membershipId);
     const seen = await this.readAffected(tx, org.orgId, membershipId, now);
     const lockedOffers = sortedUnique(seen.offers.map((o) => o.id));
     const lockedShifts = sortedUnique([

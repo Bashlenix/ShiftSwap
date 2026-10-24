@@ -28,9 +28,11 @@ export class DomainError extends Error {
     readonly code: ErrorCode,
     message: string,
     readonly details?: Record<string, unknown>,
+    /** Overrides the code's default status (e.g. 409 VALIDATION_FAILED for a duplicate name). */
+    status?: number,
   ) {
     super(message);
     this.name = 'DomainError';
-    this.status = STATUS_BY_CODE[code];
+    this.status = status ?? STATUS_BY_CODE[code];
   }
 }

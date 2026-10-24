@@ -5,7 +5,15 @@ export interface AuditEntry {
   orgId: string;
   actorMembershipId: string | null;
   action: string;
-  entityType: 'organization' | 'membership' | 'invite' | 'shift' | 'offer' | 'acceptance' | 'unavailability';
+  entityType:
+    | 'organization'
+    | 'membership'
+    | 'skill'
+    | 'invite'
+    | 'shift'
+    | 'offer'
+    | 'acceptance'
+    | 'unavailability';
   entityId: string;
   before?: unknown;
   after?: unknown;

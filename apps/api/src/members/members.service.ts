@@ -14,7 +14,7 @@ import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
 import type { OrgContext } from '../tenancy/org-context.decorator';
 import { lockMembership } from '../offers/offer-locks';
-import { lockMemberAndAdmins } from './admin-locks';
+import { lockMemberAndAdmins, lockOpenInvites } from './admin-locks';
 import { buildInviteMail } from './invite-mail';
 import { INVITE_TTL_MS, inviteLink, newInviteToken } from './invite-token';
 
@@ -196,6 +196,8 @@ export class MembersService {
     input: ResendInviteInput,
   ): Promise<{ inviteLink: string }> {
     return withAfterCommit(this.prisma, async (tx, after) => {
+      // Invites before the membership: accepting an invite locks invite -> membership.
+      await lockOpenInvites(tx, org.orgId, membershipId);
       await lockMembership(tx, org.orgId, membershipId);
       const m = await tx.membership.findUniqueOrThrow({ where: { id: membershipId } });
       if (!m.email || m.userId !== null || m.status !== 'ACTIVE') {

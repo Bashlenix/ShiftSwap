@@ -68,7 +68,8 @@ export class InvitesService {
 
   async accept(token: string, user: AuthUser): Promise<{ organizationId: string }> {
     return this.prisma.$transaction(async (tx) => {
-      // Lock order: invite -> membership (nothing else locks invites).
+      // Lock order: invite -> membership. Deactivation and re-sending also lock the member's
+      // open invites before the membership (lockOpenInvites), so the order never inverts.
       const rows = await tx.$queryRaw<InviteRow[]>`
         SELECT id, organization_id, membership_id, email, expires_at, accepted_at, revoked_at
         FROM "invites" WHERE token_hash = ${hashInviteToken(token)} FOR UPDATE`;

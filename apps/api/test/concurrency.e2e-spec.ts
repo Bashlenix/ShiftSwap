@@ -205,7 +205,7 @@ describe('concurrency', () => {
     expect(outcomes.filter((_, i) => i % 2 === 0)).toEqual(Array(5).fill('EXPIRED'));
   });
 
-  it('(c2) expireDue blocked on a held offer lock skips the offer once it is no longer OPEN', async () => {
+  it('(c2) expireDue skips an offer whose lock is held (SKIP LOCKED) and never expires it once resolved', async () => {
     const service = app.get(OffersService);
     const { offerId } = await giveAway(anna, slot(90, 8, 4), [jonas]);
     await ctx.prisma.offer.update({
@@ -230,19 +230,78 @@ describe('concurrency', () => {
       { timeout: 15_000 },
     );
     await locked;
-    let swept = false;
-    const sweep = service.expireDue(new Date()).then((n) => {
-      swept = true;
-      return n;
-    });
-    await new Promise((r) => setTimeout(r, 200));
-    expect(swept).toBe(false); // the conditional UPDATE waits for the row lock
-    release();
-    await holder;
-    await sweep;
+    try {
+      // The sweep must not wait for the held row: it finishes while the lock is still held.
+      const outcome = await Promise.race([
+        service.expireDue(new Date()).then(() => 'swept'),
+        new Promise((r) => setTimeout(() => r('blocked'), 2_000)),
+      ]);
+      expect(outcome).toBe('swept');
+    } finally {
+      release();
+      await holder;
+    }
+    await service.expireDue(new Date());
     const o = await ctx.prisma.offer.findUniqueOrThrow({ where: { id: offerId } });
     expect(o).toMatchObject({ status: 'REJECTED', version: 2 });
     expect(await auditCount('offer.expired', offerId)).toBe(0);
+  });
+
+  it('(c3) expireDue vs a transaction locking two due offers in id order: no deadlock', async () => {
+    const service = app.get(OffersService);
+    // Heap order and shift-id order (the open-offer index) are both the reverse of offer-id order,
+    // so an unordered bulk UPDATE reaches the high id first.
+    const ids = ['ffffffff-ffff-4fff-bfff-fffffffffff8', '00000000-0000-4000-8000-000000000008'];
+    const shiftIds = [
+      '00000000-0000-4000-8000-0000000000a8',
+      'ffffffff-ffff-4fff-bfff-ffffffffffa8',
+    ];
+    for (const [i, id] of ids.entries()) {
+      const shiftId = shiftIds[i];
+      await ctx.prisma.shift.create({
+        data: {
+          id: shiftId,
+          organizationId: orgId,
+          assignedMembershipId: anna.membershipId,
+          ...slot(95 + i * 2, 8, 4),
+        },
+      });
+      await ctx.prisma.offer.create({
+        data: {
+          id,
+          organizationId: orgId,
+          shiftId,
+          kind: 'GIVE_AWAY',
+          originalOwnerMembershipId: anna.membershipId,
+          createdByMembershipId: anna.membershipId,
+          expiresAt: new Date(Date.now() - 1_000),
+        },
+      });
+    }
+    const [high, low] = ids;
+    let markLocked!: () => void;
+    const locked = new Promise<void>((r) => (markLocked = r));
+    // Locks like deactivation does: offers ascending by id.
+    const holder = ctx.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "offers" WHERE id = ${low} FOR UPDATE`;
+        markLocked();
+        await new Promise((r) => setTimeout(r, 400));
+        await tx.$queryRaw`SELECT id FROM "offers" WHERE id = ${high} FOR UPDATE`;
+      },
+      { timeout: 15_000 },
+    );
+    await locked;
+    const [held, swept] = await Promise.allSettled([holder, service.expireDue(new Date())]);
+    expect(held.status).toBe('fulfilled');
+    expect(swept.status).toBe('fulfilled');
+    // The held offer was skipped this round; the next sweep expires it.
+    await service.expireDue(new Date());
+    for (const id of ids) {
+      const o = await ctx.prisma.offer.findUniqueOrThrow({ where: { id } });
+      expect(o).toMatchObject({ status: 'EXPIRED', version: 2 });
+      expect(await auditCount('offer.expired', id)).toBe(1);
+    }
   });
 
   it('(d) shift PATCH racing an approve -> one 200, one 409, no deadlock', async () => {
@@ -255,13 +314,11 @@ describe('concurrency', () => {
         api(app, tom.cookie)
           .post(url(`/${offerId}/approve`))
           .send({ acceptanceId: acceptanceIds[0], version: 1 }),
-        api(app, sara.cookie)
-          .patch(`/api/v1/orgs/${orgId}/shifts/${shiftId}`)
-          .send({
-            startAt: moved.startAt.toISOString(),
-            endAt: moved.endAt.toISOString(),
-            version: 1,
-          }),
+        api(app, sara.cookie).patch(`/api/v1/orgs/${orgId}/shifts/${shiftId}`).send({
+          startAt: moved.startAt.toISOString(),
+          endAt: moved.endAt.toISOString(),
+          version: 1,
+        }),
       ]);
       expect([approve.status, patch.status].sort()).toEqual([200, 409]);
       const o = await ctx.prisma.offer.findUniqueOrThrow({ where: { id: offerId } });

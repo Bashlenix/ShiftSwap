@@ -4,7 +4,7 @@ import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './auth/auth.module';
 import { pathOnly } from './config/log-url';
 import { AuditModule } from './audit/audit.module';
-import { DirectoryModule } from './directory/directory.module';
+import { SkillsModule } from './skills/skills.module';
 import { AvailabilityModule } from './availability/availability.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { NotificationsModule } from './notifications/notifications.module';
@@ -46,7 +46,7 @@ export class AppModule {
         AuthModule.register(env),
         MailModule,
         AuditModule,
-        DirectoryModule,
+        SkillsModule,
         MembersModule.register(env),
         InvitesModule,
         ShiftsModule,

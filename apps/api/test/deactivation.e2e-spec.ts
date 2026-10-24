@@ -487,4 +487,122 @@ describe('deactivate / reactivate members (FR-15, SDD §17)', () => {
       }
     }
   });
+
+  it('an in-progress shift (startAt <= now < endAt) stays assigned', async () => {
+    const p = await makeMember(ctx, orgId, { accessLevel: 'EMPLOYEE', withLogin: false });
+    const running = await makeShift(p.membershipId, {
+      startAt: new Date(Date.now() - 3600_000),
+      endAt: new Date(Date.now() + 3600_000),
+    });
+    const res = await deactivate(maria, p.membershipId);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ unassigned: 0, reposted: 0 });
+    const s = await ctx.prisma.shift.findUniqueOrThrow({ where: { id: running } });
+    expect(s).toMatchObject({ assignedMembershipId: p.membershipId, version: 1 });
+    expect(await openOffers(running)).toHaveLength(0);
+  });
+
+  /* ---------------------------------------------------- invite <-> membership lock order */
+
+  let inviteN = 0;
+  const tokenOf = (link: string) => /\/invites\/([A-Za-z0-9_-]{43})/.exec(link)![1];
+  /** A placeholder invited by Maria plus a signed-in user owning the invite email. */
+  const invitedPlaceholder = async () => {
+    const addr = `race-${Date.now()}-${inviteN++}@shiftswap.test`;
+    const created = await api(app, maria.cookie)
+      .post(membersUrl())
+      .send({ displayName: 'Invitee', email: addr });
+    expect(created.status).toBe(201);
+    const { orgId: elsewhere } = await makeOrg(ctx.prisma);
+    const user = await makeMember(ctx, elsewhere, { accessLevel: 'EMPLOYEE' });
+    await ctx.prisma.user.update({ where: { id: user.userId! }, data: { email: addr } });
+    return {
+      membershipId: created.body.member.id as string,
+      token: tokenOf(created.body.inviteLink),
+      cookie: user.cookie!,
+      userId: user.userId!,
+    };
+  };
+  const acceptInvite = (token: string, cookie: string) =>
+    api(app, cookie)
+      .post(`/api/v1/invites/${token}/accept`)
+      .set('X-Forwarded-For', `10.9.${Math.floor(inviteN / 250)}.${inviteN++ % 250}`);
+  /** Locks the invite row like accept does, then (after `ms`) the membership row. */
+  const holdInviteThenMembership = (inviteId: string, membershipId: string, ms = 400) => {
+    let markLocked!: () => void;
+    const locked = new Promise<void>((r) => (markLocked = r));
+    const done = ctx.prisma.$transaction(
+      async (tx) => {
+        await tx.$queryRaw`SELECT id FROM "invites" WHERE id = ${inviteId} FOR UPDATE`;
+        markLocked();
+        await new Promise((r) => setTimeout(r, ms));
+        await tx.$queryRaw`SELECT id FROM "memberships" WHERE id = ${membershipId} FOR NO KEY UPDATE`;
+      },
+      { timeout: 15_000 },
+    );
+    return { locked, done };
+  };
+
+  it('deactivation vs a transaction holding invite -> membership locks: no deadlock', async () => {
+    const p = await invitedPlaceholder();
+    const invite = await ctx.prisma.invite.findFirstOrThrow({
+      where: { membershipId: p.membershipId },
+    });
+    const holder = holdInviteThenMembership(invite.id, p.membershipId);
+    await holder.locked;
+    const [held, deact] = await Promise.allSettled([
+      holder.done,
+      deactivate(maria, p.membershipId),
+    ]);
+    expect(held.status).toBe('fulfilled');
+    expect(deact.status === 'fulfilled' && deact.value.status).toBe(200);
+    const inv = await ctx.prisma.invite.findUniqueOrThrow({ where: { id: invite.id } });
+    expect(inv.revokedAt).not.toBeNull();
+  });
+
+  it('resending an invite vs a transaction holding invite -> membership locks: no deadlock', async () => {
+    const p = await invitedPlaceholder();
+    const invite = await ctx.prisma.invite.findFirstOrThrow({
+      where: { membershipId: p.membershipId },
+    });
+    const holder = holdInviteThenMembership(invite.id, p.membershipId);
+    await holder.locked;
+    const [held, resend] = await Promise.allSettled([
+      holder.done,
+      api(app, maria.cookie)
+        .post(membersUrl(`/${p.membershipId}/invite`))
+        .send({ appOrigin: 'http://localhost:5173' }),
+    ]);
+    expect(held.status).toBe('fulfilled');
+    expect(resend.status === 'fulfilled' && resend.value.status).toBe(201);
+  });
+
+  it('deactivating a placeholder while its invite is accepted in parallel stays consistent (x5)', async () => {
+    for (let i = 0; i < 5; i++) {
+      const p = await invitedPlaceholder();
+      const [acc, deact] = await Promise.all([
+        after(STAGGER[i], () => acceptInvite(p.token, p.cookie)),
+        deactivate(maria, p.membershipId),
+      ]);
+      expect(deact.status).toBe(200);
+      const m = await ctx.prisma.membership.findUniqueOrThrow({ where: { id: p.membershipId } });
+      const inv = await ctx.prisma.invite.findFirstOrThrow({
+        where: { membershipId: p.membershipId },
+      });
+      expect(m.status).toBe('DEACTIVATED');
+      if (acc.status === 200) {
+        // Accepted first, then deactivated.
+        expect(m.userId).toBe(p.userId);
+        expect(inv.acceptedAt).not.toBeNull();
+        expect(inv.revokedAt).toBeNull();
+      } else {
+        expect(acc.status).toBe(410);
+        expect(acc.body.error.code).toBe('INVITE_INVALID');
+        expect(acc.body.error.details).toEqual({ state: 'REVOKED' });
+        expect(m.userId).toBeNull();
+        expect(inv.acceptedAt).toBeNull();
+        expect(inv.revokedAt).not.toBeNull();
+      }
+    }
+  });
 });

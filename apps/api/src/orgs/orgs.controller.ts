@@ -1,5 +1,11 @@
-import { Body, Controller, Get, HttpCode, Post, UseGuards } from '@nestjs/common';
-import { createOrgSchema, type CreateOrgInput, type OrgDto } from '@shiftswap/shared';
+import { Body, Controller, Get, HttpCode, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  createOrgSchema,
+  orgSettingsSchema,
+  type CreateOrgInput,
+  type OrgDto,
+  type OrgSettingsInput,
+} from '@shiftswap/shared';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { SessionGuard, type AuthUser } from '../auth/session.guard';
 import { ZodBody } from '../common/zod-body.pipe';
@@ -28,5 +34,15 @@ export class OrgsController {
   @MinAccess('EMPLOYEE')
   get(@Org() org: OrgContext): Promise<OrgDto> {
     return this.orgs.get(org.orgId);
+  }
+
+  @Patch(':orgId')
+  @UseGuards(SessionGuard, OrgGuard)
+  @MinAccess('ADMIN')
+  update(
+    @Org() org: OrgContext,
+    @Body(ZodBody(orgSettingsSchema)) body: OrgSettingsInput,
+  ): Promise<OrgDto> {
+    return this.orgs.update(org, body);
   }
 }

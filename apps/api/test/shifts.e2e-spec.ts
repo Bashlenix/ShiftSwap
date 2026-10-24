@@ -368,6 +368,35 @@ describe('shifts API', () => {
     expect(res.body.error.code).toBe('VALIDATION_FAILED');
   });
 
+  it('assigning a DEACTIVATED member (create or PATCH) -> 409 INVALID_TRANSITION', async () => {
+    const gone = await makeMember(ctx, orgId, { accessLevel: 'EMPLOYEE' });
+    await ctx.prisma.membership.update({
+      where: { id: gone.membershipId },
+      data: { status: 'DEACTIVATED' },
+    });
+    const slot = { startAt: iso('2027-05-03T08:00:00Z'), endAt: iso('2027-05-03T12:00:00Z') };
+
+    const created = await create({ ...slot, assignedMembershipId: gone.membershipId });
+    expect(created.status).toBe(409);
+    expect(created.body.error).toMatchObject({
+      code: 'INVALID_TRANSITION',
+      message: 'This person is deactivated.',
+    });
+
+    const free = await create(slot);
+    expect(free.status).toBe(201);
+    const patched = await api(app, manager.cookie)
+      .patch(url(`/${free.body.shift.id}`))
+      .send({ version: 1, assignedMembershipId: gone.membershipId });
+    expect(patched.status).toBe(409);
+    expect(patched.body.error).toMatchObject({
+      code: 'INVALID_TRANSITION',
+      message: 'This person is deactivated.',
+    });
+    const after = await ctx.prisma.shift.findUniqueOrThrow({ where: { id: free.body.shift.id } });
+    expect(after).toMatchObject({ assignedMembershipId: null, version: 1 });
+  });
+
   it('writes one audit row per write, scheduling fields only', async () => {
     const rows = await ctx.prisma.auditLog.findMany({
       where: { organizationId: orgId, entityType: 'shift' },
