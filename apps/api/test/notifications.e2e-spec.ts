@@ -153,13 +153,18 @@ describe('in-app notifications', () => {
 
       const again = await api(app, e1.cookie).post(url(`/${offerId}/acceptances`));
       expect(again.status).toBe(200);
-      expect((await rows('ACCEPTANCE_RECEIVED', offerId)).length).toBe(4);
+      expect(await recipients('ACCEPTANCE_RECEIVED', offerId)).toEqual(
+        ids(owner, mgr, mgrElig, admin),
+      );
 
       expect((await api(app, e1.cookie).delete(url(`/${offerId}/acceptances/me`))).status).toBe(
         204,
       );
       expect((await api(app, e1.cookie).post(url(`/${offerId}/acceptances`))).status).toBe(200);
-      expect((await rows('ACCEPTANCE_RECEIVED', offerId)).length).toBe(8);
+      const all = (await rows('ACCEPTANCE_RECEIVED', offerId)).map((n) => n.recipientMembershipId);
+      expect(all.sort()).toEqual(
+        [...ids(owner, mgr, mgrElig, admin), ...ids(owner, mgr, mgrElig, admin)].sort(),
+      );
     });
 
     it('a manager accepting does not notify themselves', async () => {
@@ -181,6 +186,78 @@ describe('in-app notifications', () => {
       expect(await roleOf('OFFER_APPROVED', offerId, e1)).toBe('selected');
       expect(await roleOf('OFFER_APPROVED', offerId, owner)).toBe('owner');
       expect(await roleOf('OFFER_APPROVED', offerId, e2)).toBe('notSelected');
+    });
+  });
+
+  describe('negative and multi-org cases', () => {
+    it('failed approve (stale version -> 409) writes no OFFER_APPROVED rows', async () => {
+      const { offerId, acceptanceIds } = await giveAway([e1]);
+      const res = await api(app, mgr.cookie)
+        .post(url(`/${offerId}/approve`))
+        .send({ acceptanceId: acceptanceIds[0], version: 99 });
+      expect(res.status).toBe(409);
+      expect(await recipients('OFFER_APPROVED', offerId)).toEqual([]);
+    });
+
+    it('expireDue across two orgs: each org rows carry that org id', async () => {
+      const mkOrg = async () => {
+        const { orgId: oid } = await makeOrg(ctx.prisma);
+        const m = await makeMember(ctx, oid, { accessLevel: 'MANAGER' });
+        const shift = await ctx.prisma.shift.create({
+          data: { organizationId: oid, assignedMembershipId: null, ...nextSlot() },
+        });
+        const offer = await ctx.prisma.offer.create({
+          data: {
+            organizationId: oid,
+            shiftId: shift.id,
+            kind: 'OPEN_SHIFT',
+            createdByMembershipId: m.membershipId,
+            expiresAt: new Date(Date.now() - 1000),
+          },
+        });
+        return { oid, m, offerId: offer.id };
+      };
+      const [x, y] = [await mkOrg(), await mkOrg()];
+      await app.get(OffersService).expireDue(new Date());
+      for (const o of [x, y]) {
+        const n = await ctx.prisma.notification.findMany({
+          where: { type: 'OFFER_EXPIRED', payload: { path: ['offerId'], equals: o.offerId } },
+        });
+        expect(n.map((r) => [r.organizationId, r.recipientMembershipId])).toEqual([
+          [o.oid, o.m.membershipId],
+        ]);
+      }
+    });
+  });
+
+  describe('lock interplay', () => {
+    it('approve notifying a member while that member accepts elsewhere never deadlocks (x5)', async () => {
+      const mkE = () => makeMember(ctx, orgId, { accessLevel: 'EMPLOYEE', skillNames: ['Bar'] });
+      const setups = await Promise.all(
+        Array.from({ length: 5 }, async () => {
+          const [o, a, b] = [await mkE(), await mkE(), await mkE()];
+          // X owned by o, candidates a (to be approved) and b; Y owned by a, b accepts it.
+          const shiftX = await makeShift(o.membershipId);
+          const shiftY = await makeShift(a.membershipId);
+          const mkOffer = async (owner: Member, shiftId: string) =>
+            (await api(app, owner.cookie).post(url()).send({ shiftId, kind: 'GIVE_AWAY' })).body
+              .id as string;
+          const x = await mkOffer(o, shiftX);
+          const y = await mkOffer(a, shiftY);
+          const accA = await api(app, a.cookie).post(url(`/${x}/acceptances`));
+          expect((await api(app, b.cookie).post(url(`/${x}/acceptances`))).status).toBe(201);
+          return { a, b, x, y, accId: accA.body.id as string };
+        }),
+      );
+      const results = await Promise.all(
+        setups.flatMap((s) => [
+          api(app, mgr.cookie)
+            .post(url(`/${s.x}/approve`))
+            .send({ acceptanceId: s.accId, version: 1 }),
+          api(app, s.b.cookie).post(url(`/${s.y}/acceptances`)),
+        ]),
+      );
+      for (const r of results) expect(r.status).toBeLessThan(500);
     });
   });
 
@@ -338,6 +415,33 @@ describe('in-app notifications', () => {
         'readAt',
         'type',
       ]);
+    });
+
+    it('same-createdAt rows with limit=1 are each returned exactly once', async () => {
+      const m = await makeMember(ctx, orgId, { accessLevel: 'EMPLOYEE' });
+      const at = new Date();
+      await ctx.prisma.notification.createMany({
+        data: ['t0', 't1', 't2'].map((o) => ({
+          organizationId: orgId,
+          recipientMembershipId: m.membershipId,
+          type: 'OFFER_CREATED' as const,
+          payload: { offerId: o },
+          createdAt: at,
+        })),
+      });
+      const seen: string[] = [];
+      let cursor: string | null = null;
+      for (let i = 0; i < 5; i++) {
+        const res = await api(app, m.cookie).get(
+          nUrl(`?limit=1${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`),
+        );
+        seen.push(
+          ...res.body.items.map((n: { payload: { offerId: string } }) => n.payload.offerId),
+        );
+        cursor = res.body.nextCursor;
+        if (!cursor) break;
+      }
+      expect(seen.sort()).toEqual(['t0', 't1', 't2']);
     });
 
     it('rejects a bad limit or cursor with 400', async () => {

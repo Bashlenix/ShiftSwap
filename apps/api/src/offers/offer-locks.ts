@@ -23,8 +23,10 @@ export async function lockShift(tx: Tx, orgId: string, shiftId: string): Promise
   if (rows.length === 0) throw notFound();
 }
 
+// NO KEY UPDATE still serialises lockMembership callers but does not conflict with the FOR KEY SHARE
+// that notification inserts take on recipient rows (FK), which would otherwise risk deadlocks.
 export async function lockMembership(tx: Tx, orgId: string, membershipId: string): Promise<void> {
   const rows = await tx.$queryRaw<{ id: string }[]>`
-    SELECT id FROM "memberships" WHERE id = ${membershipId} AND organization_id = ${orgId} FOR UPDATE`;
+    SELECT id FROM "memberships" WHERE id = ${membershipId} AND organization_id = ${orgId} FOR NO KEY UPDATE`;
   if (rows.length === 0) throw notFound();
 }

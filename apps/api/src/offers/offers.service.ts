@@ -443,14 +443,11 @@ export class OffersService {
         after: { ...offerAudit(after), assignedMembershipId: org.membershipId },
         metadata: { acceptanceId: acceptance.id, acceptanceStatus: acceptance.status },
       });
-      // The claimant is the actor, so only managers are notified.
+      // The claimant is the actor and never notified themselves: managers only.
       await this.notifications.notifyGroups(
         tx,
         org.orgId,
-        [
-          { role: 'selected', ids: [org.membershipId] },
-          { role: 'manager', ids: await this.notifications.managerIds(tx, org.orgId) },
-        ],
+        [{ role: 'manager', ids: await this.notifications.managerIds(tx, org.orgId) }],
         'OPEN_SHIFT_FILLED',
         offerPayload(offer, shift),
         org.membershipId,
