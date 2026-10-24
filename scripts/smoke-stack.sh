@@ -13,7 +13,8 @@ EMAIL="anna@shiftswap.test"
 PASSWORD="ShiftSwap-Demo-2026"
 JAR="$(mktemp)"
 TUNNEL_JAR="$(mktemp)"
-trap 'rm -f "$JAR" "$TUNNEL_JAR"' EXIT
+ADMIN_JAR="$(mktemp)"
+trap 'rm -f "$JAR" "$TUNNEL_JAR" "$ADMIN_JAR"' EXIT
 
 pass() { echo "PASS: $1"; }
 fail() { echo "FAIL: $1"; exit 1; }
@@ -40,12 +41,26 @@ logs_leak_emails() { grep -qiE 'shiftswap\.test' <<<"$1"; }
 # True (exit 0) when the text contains the given invite token verbatim.
 logs_leak_token() { grep -qF -- "$2" <<<"$1"; }
 
-# Creates an invited placeholder as the signed-in admin and prints the token from its link.
+# Signs in Maria (admin of Café Lindenhof; Anna is an employee and may not add people).
+# Sign-in is rate limited per IP (3 per 10 s): on 429 wait for the window and retry once.
+admin_sign_in() {
+  local status i
+  for i in 1 2; do
+    status="$(code -c "$ADMIN_JAR" -H "Origin: $ORIGIN" -H 'Content-Type: application/json' \
+      -d "{\"email\":\"maria@shiftswap.test\",\"password\":\"$PASSWORD\"}" \
+      "$BASE/api/auth/sign-in/email")"
+    [ "$status" = "429" ] && [ "$i" = "1" ] && { sleep 11; continue; }
+    echo "$status"
+    return
+  done
+}
+
+# Creates an invited placeholder as Maria and prints the token from its link.
 # Runs before the api restart: demo data resets on start, so the extra member is gone after.
 invite_token() {
   local org body
-  org="$(curl -s -b "$JAR" "$BASE/api/v1/me" | grep -oE '"organizationId":"[^"]+"' | head -1 | cut -d'"' -f4)"
-  body="$(curl -s -b "$JAR" -H "Origin: $ORIGIN" -H 'Content-Type: application/json' \
+  org="$(curl -s -b "$ADMIN_JAR" "$BASE/api/v1/me" | grep -oE '"organizationId":"[^"]+"' | head -1 | cut -d'"' -f4)"
+  body="$(curl -s -b "$ADMIN_JAR" -H "Origin: $ORIGIN" -H 'Content-Type: application/json' \
     -d "{\"displayName\":\"Smoke Invitee\",\"email\":\"smoke.invitee@shiftswap.test\",\"appOrigin\":\"$ORIGIN\"}" \
     "$BASE/api/v1/orgs/$org/members")"
   grep -oE '/invites/[A-Za-z0-9_-]+' <<<"$body" | head -1 | cut -d/ -f3
@@ -82,6 +97,7 @@ main() {
       && pass "Codespace-style origin rejected -> 403" || fail "Codespace-style origin not rejected"
   fi
 
+  [ "$(admin_sign_in)" = "200" ] && pass "admin sign-in -> 200" || fail "admin sign-in"
   token="$(invite_token || true)"
   [ -n "$token" ] && pass "invite created" || fail "invite not created"
   [ "$(code "$BASE/api/v1/invites/$token")" = "200" ] \
