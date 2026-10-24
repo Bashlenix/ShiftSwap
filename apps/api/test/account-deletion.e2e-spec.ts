@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { AccountModule } from '../src/account/account.module';
+import type { Prisma } from '../src/generated/prisma/client';
 import { InvitesService } from '../src/invites/invites.service';
 import { MailService } from '../src/mail/mail.service';
 import { NotificationMailer } from '../src/notifications/notification-mailer';
@@ -387,38 +388,35 @@ describe('DELETE /api/v1/me (account deletion, FR-23, SDD §27/§35)', () => {
       // Deterministic interleave: the accept commits right after the final transaction has
       // read the user's memberships and before it locks them and updates the user row.
       let fired = false;
-      const real = ctx.prisma.$transaction.bind(ctx.prisma);
-      const spy = jest.spyOn(ctx.prisma, '$transaction').mockImplementation(((
-        arg: unknown,
-        ...rest: unknown[]
-      ) => {
-        if (typeof arg !== 'function') return (real as any)(arg, ...rest);
-        return (real as any)(
-          async (tx: any) => {
-            const proxied = new Proxy(tx, {
-              get(target, prop) {
-                if (prop !== 'membership') return target[prop];
-                return new Proxy(target.membership, {
-                  get(m, mp) {
-                    if (mp !== 'findMany') return m[mp];
-                    return async (q: { where?: Record<string, unknown> }) => {
-                      const r = await m.findMany(q);
-                      const w = q?.where ?? {};
-                      if (!fired && w.userId === userId && w.status === undefined) {
-                        fired = true;
-                        await invites.accept(token, authUser);
-                      }
-                      return r;
-                    };
-                  },
-                });
-              },
-            });
-            return (arg as (t: unknown) => unknown)(proxied);
+      type Tx = Prisma.TransactionClient;
+      type FindMany = (q: { where?: Record<string, unknown> }) => Promise<unknown>;
+      const real = ctx.prisma.$transaction.bind(ctx.prisma) as (...a: unknown[]) => unknown;
+      const pausing = (tx: Tx): Tx => {
+        const membership = new Proxy(tx.membership, {
+          get(m, prop, receiver) {
+            if (prop !== 'findMany') return Reflect.get(m, prop, receiver);
+            return async (q: { where?: Record<string, unknown> }) => {
+              const r = await (m.findMany as unknown as FindMany)(q);
+              const w = q?.where ?? {};
+              if (!fired && w.userId === userId && w.status === undefined) {
+                fired = true;
+                await invites.accept(token, authUser);
+              }
+              return r;
+            };
           },
-          ...rest,
-        );
-      }) as never);
+        });
+        return new Proxy(tx, {
+          get: (t, prop, receiver) =>
+            prop === 'membership' ? membership : Reflect.get(t, prop, receiver),
+        });
+      };
+      const spy = jest
+        .spyOn(ctx.prisma, '$transaction')
+        .mockImplementation(((arg: unknown, ...rest: unknown[]) =>
+          typeof arg === 'function'
+            ? real((tx: Tx) => (arg as (t: Tx) => unknown)(pausing(tx)), ...rest)
+            : real(arg, ...rest)) as never);
       let res;
       try {
         res = await deleteMe(u.cookie);
