@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MemberDto } from '@shiftswap/shared';
 import { ApiError } from '../../lib/api';
 import { MANAGER_ORG, renderWithOrg, TEST_ORG } from '../../test-utils';
@@ -46,10 +46,17 @@ function setup(org = MANAGER_ORG) {
 
 const rowOf = (name: string) => screen.getByRole('row', { name: new RegExp(name) });
 
+// Some tests replace navigator.clipboard; put the original back so no stub leaks.
+const originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+
 describe('MembersPage', () => {
   beforeEach(() => {
     apiFetch.mockReset();
     apiSend.mockReset();
+  });
+  afterEach(() => {
+    if (originalClipboard) Object.defineProperty(navigator, 'clipboard', originalClipboard);
+    else delete (navigator as { clipboard?: unknown }).clipboard;
   });
 
   it('tells employees the page is for managers', () => {
@@ -295,5 +302,10 @@ describe('MembersPage', () => {
       "This person's status changed. The list has been refreshed.",
     );
     await waitFor(() => expect(apiFetch.mock.calls.length).toBeGreaterThan(before));
+  });
+
+  // Runs last (file order): the stubs from the copy tests above were put back.
+  it('leaves navigator.clipboard as it found it', () => {
+    expect(Object.getOwnPropertyDescriptor(navigator, 'clipboard')).toEqual(originalClipboard);
   });
 });
