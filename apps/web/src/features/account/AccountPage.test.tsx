@@ -14,6 +14,9 @@ vi.mock('../../lib/api', async (orig) => ({
   apiSend,
 }));
 
+const refreshSession = vi.hoisted(() => vi.fn());
+vi.mock('../../lib/session', () => ({ refreshSession }));
+
 function LoginStub() {
   const { state } = useLocation() as { state: { notice?: string } | null };
   return <p>login page: {state?.notice}</p>;
@@ -54,6 +57,8 @@ describe('AccountPage', () => {
     apiFetch.mockReset();
     apiSend.mockReset();
     apiFetch.mockResolvedValue(me);
+    refreshSession.mockReset();
+    refreshSession.mockResolvedValue(undefined);
   });
 
   it('shows name and email', async () => {
@@ -86,6 +91,33 @@ describe('AccountPage', () => {
     expect(apiSend).toHaveBeenCalledWith('DELETE', '/api/v1/me', { confirm: 'DELETE' });
     expect(router.state.location.state).toEqual({ notice: 'Your account was deleted.' });
     expect(client.getQueryCache().getAll()).toHaveLength(0);
+  });
+
+  it('clears the session store after leaving /account (RequireAuth then redirects on Back)', async () => {
+    apiSend.mockResolvedValue(undefined);
+    const { router } = renderPage();
+    const pathAtRefresh: string[] = [];
+    refreshSession.mockImplementation(async () => {
+      pathAtRefresh.push(router.state.location.pathname);
+    });
+    await openDialog();
+    await userEvent.type(screen.getByLabelText('Type DELETE to confirm'), 'DELETE');
+    await userEvent.click(screen.getByRole('button', { name: 'Delete my account' }));
+    await waitFor(() => expect(refreshSession).toHaveBeenCalledTimes(1));
+    // After navigate: refreshing on /account would make RequireAuth bounce mid-flight.
+    expect(pathAtRefresh).toEqual(['/login']);
+  });
+
+  it('still lands on login when clearing the session store fails', async () => {
+    apiSend.mockResolvedValue(undefined);
+    refreshSession.mockRejectedValue(new Error('offline'));
+    const { router } = renderPage();
+    await openDialog();
+    await userEvent.type(screen.getByLabelText('Type DELETE to confirm'), 'DELETE');
+    await userEvent.click(screen.getByRole('button', { name: 'Delete my account' }));
+    await waitFor(() => expect(refreshSession).toHaveBeenCalled());
+    expect(router.state.location.pathname).toBe('/login');
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('names the organisations on LAST_ADMIN', async () => {

@@ -18,6 +18,7 @@ import { Label } from '../../components/ui/label';
 import { PageHeader } from '../../components/ui/page-header';
 import { ApiError, apiSend } from '../../lib/api';
 import { errorMessage } from '../../lib/error-messages';
+import { refreshSession } from '../../lib/session';
 import { useMe, type Me } from '../orgs/useMe';
 
 const CONFIRM_WORD = 'DELETE';
@@ -70,7 +71,11 @@ export function AccountPage() {
       setError(failureCopy(err, data.memberships));
       inFlight.current = false;
       setBusy(false);
+      return;
     }
+    // Only after leaving /account (RequireAuth wraps it): the session store still holds the
+    // deleted user until refetched, which would let Back reopen protected pages.
+    await refreshSession().catch(() => undefined);
   }
 
   return (
