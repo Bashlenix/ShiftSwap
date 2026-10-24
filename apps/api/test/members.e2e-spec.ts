@@ -368,6 +368,123 @@ describe('members API (FR-02, FR-03)', () => {
       expect(r2.body.error.code).toBe('INVALID_TRANSITION');
     });
 
+    describe('with an email for a placeholder (FR-03)', () => {
+      it('invites a placeholder created without email (Paul Weber pattern)', async () => {
+        const ph = await api(app, manager.cookie).post(url()).send({ displayName: 'Paul W' });
+        const addr = email();
+        const before = mail().sent.length;
+        const res = await api(app, manager.cookie)
+          .post(url(`/${ph.body.member.id}/invite`))
+          .send({ email: `  ${addr}  ` });
+        expect(res.status).toBe(201);
+        expect(res.body.inviteLink).toMatch(/\/invites\/[A-Za-z0-9_-]{43}$/);
+        const m = await ctx.prisma.membership.findUniqueOrThrow({
+          where: { id: ph.body.member.id },
+        });
+        expect(m.email).toBe(addr.toLowerCase());
+        const invite = await ctx.prisma.invite.findFirstOrThrow({
+          where: { membershipId: ph.body.member.id },
+        });
+        expect(invite.email).toBe(addr.toLowerCase());
+        const sent = mail().sent.slice(before);
+        expect(sent).toHaveLength(1);
+        expect(sent[0].to).toBe(addr.toLowerCase());
+        const list = await api(app, manager.cookie).get(url());
+        expect(list.body.find((x: { id: string }) => x.id === ph.body.member.id)).toMatchObject({
+          email: addr.toLowerCase(),
+          invitePending: true,
+        });
+      });
+
+      it('changes the address of a pending placeholder and revokes the old invite', async () => {
+        const c = await api(app, manager.cookie)
+          .post(url())
+          .send({ displayName: 'Typo', email: email() });
+        const addr = email();
+        const res = await api(app, manager.cookie)
+          .post(url(`/${c.body.member.id}/invite`))
+          .send({ email: addr });
+        expect(res.status).toBe(201);
+        const invites = await ctx.prisma.invite.findMany({
+          where: { membershipId: c.body.member.id },
+          orderBy: { createdAt: 'asc' },
+        });
+        expect(invites).toHaveLength(2);
+        expect(invites[0].revokedAt).not.toBeNull();
+        expect(invites[1]).toMatchObject({ revokedAt: null, email: addr.toLowerCase() });
+      });
+
+      it('409 ALREADY_MEMBER when another member has the address; nothing changes', async () => {
+        const addr = email();
+        await api(app, manager.cookie).post(url()).send({ displayName: 'Has', email: addr });
+        const ph = await api(app, manager.cookie).post(url()).send({ displayName: 'Dup' });
+        const before = mail().sent.length;
+        const res = await api(app, manager.cookie)
+          .post(url(`/${ph.body.member.id}/invite`))
+          .send({ email: addr.toUpperCase() });
+        expect(res.status).toBe(409);
+        expect(res.body.error.code).toBe('ALREADY_MEMBER');
+        expect(mail().sent).toHaveLength(before);
+        const m = await ctx.prisma.membership.findUniqueOrThrow({
+          where: { id: ph.body.member.id },
+        });
+        expect(m.email).toBeNull();
+        expect(await ctx.prisma.invite.count({ where: { membershipId: ph.body.member.id } })).toBe(0);
+      });
+
+      it('409 INVALID_TRANSITION for a member with a login; email unchanged', async () => {
+        const before = await ctx.prisma.membership.findUniqueOrThrow({
+          where: { id: employee.membershipId },
+        });
+        const res = await api(app, manager.cookie)
+          .post(url(`/${employee.membershipId}/invite`))
+          .send({ email: email() });
+        expect(res.status).toBe(409);
+        expect(res.body.error.code).toBe('INVALID_TRANSITION');
+        const after = await ctx.prisma.membership.findUniqueOrThrow({
+          where: { id: employee.membershipId },
+        });
+        expect(after.email).toBe(before.email);
+      });
+
+      it('400 VALIDATION_FAILED for an invalid address', async () => {
+        const ph = await api(app, manager.cookie).post(url()).send({ displayName: 'Bad' });
+        const res = await api(app, manager.cookie)
+          .post(url(`/${ph.body.member.id}/invite`))
+          .send({ email: 'not-an-email' });
+        expect(res.status).toBe(400);
+        expect(res.body.error.code).toBe('VALIDATION_FAILED');
+      });
+
+      it('tenancy: a foreign placeholder is 404 and keeps no email; the same address in another org is allowed', async () => {
+        const other = await makeOrg(ctx.prisma);
+        const foreign = await makeMember(ctx, other.orgId, {
+          accessLevel: 'EMPLOYEE',
+          withLogin: false,
+        });
+        const addr = email();
+        const res = await api(app, manager.cookie)
+          .post(url(`/${foreign.membershipId}/invite`))
+          .send({ email: addr });
+        expect(res.status).toBe(404);
+        const m = await ctx.prisma.membership.findUniqueOrThrow({
+          where: { id: foreign.membershipId },
+        });
+        expect(m.email).toBeNull();
+        expect(await ctx.prisma.invite.count({ where: { membershipId: foreign.membershipId } })).toBe(0);
+
+        await ctx.prisma.membership.update({
+          where: { id: foreign.membershipId },
+          data: { email: addr.toLowerCase() },
+        });
+        const ph = await api(app, manager.cookie).post(url()).send({ displayName: 'Same' });
+        const ok = await api(app, manager.cookie)
+          .post(url(`/${ph.body.member.id}/invite`))
+          .send({ email: addr });
+        expect(ok.status).toBe(201);
+      });
+    });
+
     it('404 for another org membership', async () => {
       const other = await makeOrg(ctx.prisma);
       const m = await makeMember(ctx, other.orgId, { accessLevel: 'EMPLOYEE', withLogin: false });

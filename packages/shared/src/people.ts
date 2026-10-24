@@ -15,6 +15,7 @@ const displayName = z.string().trim().min(1, 'Enter a name').max(80, 'Use at mos
 const weeklyLimit = z.number().int().min(60).max(4800);
 const accessLevel = z.enum(['EMPLOYEE', 'MANAGER', 'ADMIN']);
 const appOrigin = z.string().url();
+const memberEmail = z.string().trim().toLowerCase().email('Enter a valid email address');
 
 export const createOrgSchema = z.object({
   name: orgName,
@@ -38,7 +39,7 @@ export type OrgSettingsInput = z.infer<typeof orgSettingsSchema>;
 
 export const createMemberSchema = z.object({
   displayName,
-  email: z.string().trim().toLowerCase().email('Enter a valid email address').nullish(),
+  email: memberEmail.nullish(),
   accessLevel: accessLevel.default('EMPLOYEE'),
   skillIds: z.array(z.string().uuid()).default([]),
   weeklyLimitMin: weeklyLimit.nullish(),
@@ -58,7 +59,11 @@ export const updateMemberSchema = z
   });
 export type UpdateMemberInput = z.infer<typeof updateMemberSchema>;
 
-export const resendInviteSchema = z.object({ appOrigin: appOrigin.optional() });
+/** `email` lets a placeholder created without one be invited (FR-03); placeholders only. */
+export const resendInviteSchema = z.object({
+  email: memberEmail.optional(),
+  appOrigin: appOrigin.optional(),
+});
 export type ResendInviteInput = z.infer<typeof resendInviteSchema>;
 
 export const skillSchema = z.object({

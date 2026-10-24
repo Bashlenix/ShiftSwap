@@ -72,6 +72,11 @@ describe('updateMemberSchema / resendInviteSchema / skillSchema', () => {
     expect(resendInviteSchema.safeParse({}).success).toBe(true);
     expect(resendInviteSchema.safeParse({ appOrigin: 'https://a.test' }).success).toBe(true);
   });
+  it('resend normalises an optional email like create and rejects bad ones', () => {
+    expect(resendInviteSchema.parse({ email: ' Paul@X.Test ' }).email).toBe('paul@x.test');
+    expect(resendInviteSchema.safeParse({ email: 'nope' }).success).toBe(false);
+    expect(resendInviteSchema.safeParse({ email: null }).success).toBe(false);
+  });
   it('skill trims and bounds', () => {
     expect(skillSchema.parse({ name: ' Bar ' }).name).toBe('Bar');
     expect(skillSchema.safeParse({ name: 'x'.repeat(41) }).success).toBe(false);

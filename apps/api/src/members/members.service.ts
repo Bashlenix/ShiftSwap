@@ -26,6 +26,30 @@ type MemberRow = Membership & { skills: { skillId: string }[] };
 
 const DEACTIVATED_MSG = 'This person was deactivated — reactivate them instead.';
 
+/**
+ * Takes the per-org advisory lock for the address (serialises concurrent claims of the same
+ * email) and throws ALREADY_MEMBER if another membership already uses it. Callers take it
+ * BEFORE any row lock, so it never sits inside the invites -> memberships lock order.
+ */
+async function claimEmail(tx: Tx, orgId: string, email: string, exceptId?: string): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${orgId}:${email}`}))`;
+  const existing = await tx.membership.findFirst({
+    where: {
+      organizationId: orgId,
+      email: { equals: email, mode: 'insensitive' },
+      status: { in: ['ACTIVE', 'DEACTIVATED'] },
+      ...(exceptId ? { id: { not: exceptId } } : {}),
+    },
+    orderBy: { status: 'asc' },
+  });
+  if (existing) {
+    throw new DomainError(
+      'ALREADY_MEMBER',
+      existing.status === 'ACTIVE' ? 'This person is already a member.' : DEACTIVATED_MSG,
+    );
+  }
+}
+
 export const toMemberDto = (m: MemberRow, invitePending: boolean): MemberDto => ({
   id: m.id,
   displayName: m.displayName,
@@ -71,24 +95,7 @@ export class MembersService {
     }
     const email = input.email ?? null;
     return withAfterCommit(this.prisma, async (tx, after) => {
-      if (email) {
-        // Serialise concurrent creates of the same address within this org.
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`${org.orgId}:${email}`}))`;
-        const existing = await tx.membership.findFirst({
-          where: {
-            organizationId: org.orgId,
-            email: { equals: email, mode: 'insensitive' },
-            status: { in: ['ACTIVE', 'DEACTIVATED'] },
-          },
-          orderBy: { status: 'asc' },
-        });
-        if (existing) {
-          throw new DomainError(
-            'ALREADY_MEMBER',
-            existing.status === 'ACTIVE' ? 'This person is already a member.' : DEACTIVATED_MSG,
-          );
-        }
-      }
+      if (email) await claimEmail(tx, org.orgId, email);
       await lockSkills(tx, org.orgId, input.skillIds);
       const member = await tx.membership.create({
         data: {
@@ -194,22 +201,29 @@ export class MembersService {
     membershipId: string,
     input: ResendInviteInput,
   ): Promise<{ inviteLink: string }> {
+    const newEmail = input.email ?? null;
     return withAfterCommit(this.prisma, async (tx, after) => {
-      // Invites before the membership: accepting an invite locks invite -> membership.
+      // Advisory email lock first (as in create), then invites before the membership:
+      // accepting an invite locks invite -> membership.
+      if (newEmail) await claimEmail(tx, org.orgId, newEmail, membershipId);
       await lockOpenInvites(tx, org.orgId, membershipId);
       await lockMembership(tx, org.orgId, membershipId);
       const m = await tx.membership.findUniqueOrThrow({ where: { id: membershipId } });
-      if (!m.email || m.userId !== null || m.status !== 'ACTIVE') {
+      const email = newEmail ?? m.email;
+      if (!email || m.userId !== null || m.status !== 'ACTIVE') {
         throw new DomainError(
           'INVALID_TRANSITION',
           'Only an active placeholder with an email address can be invited',
         );
       }
+      if (email !== m.email) {
+        await tx.membership.update({ where: { id: membershipId }, data: { email } });
+      }
       await tx.invite.updateMany({
         where: { membershipId, acceptedAt: null, revokedAt: null },
         data: { revokedAt: new Date() },
       });
-      const link = await this.issueInvite(tx, after, org, membershipId, m.email, input.appOrigin);
+      const link = await this.issueInvite(tx, after, org, membershipId, email, input.appOrigin);
       return { inviteLink: link };
     });
   }
