@@ -188,6 +188,11 @@ describe('seedDemo', () => {
       ]);
       const anna = rows.find((r) => r.recipient.displayName === 'Anna Schmidt')!;
       expect(anna.payload).toMatchObject({ kind: 'OPEN_SHIFT', role: 'eligible' });
+      const tom = rows.filter((r) => r.recipient.displayName === 'Tom Becker');
+      expect(tom.map((r) => r.payload)).toEqual([
+        expect.objectContaining({ role: 'manager' }),
+        expect.objectContaining({ role: 'manager' }),
+      ]);
     });
 
     it('offers: give-away by Anna with Lukas first, open shift by Tom', async () => {

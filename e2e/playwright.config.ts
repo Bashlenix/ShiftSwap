@@ -14,6 +14,7 @@ export default defineConfig({
   },
   // people-flow deactivates Mia, which would change the swap-flow data, so it runs in a
   // second project that starts only after the first one has finished.
+  // chromium-people depends on chromium: that dependency, not file order, sets the order.
   projects: [
     { name: 'chromium', testIgnore: /people-flow/, use: { browserName: 'chromium' } },
     {

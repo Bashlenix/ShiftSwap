@@ -2,8 +2,9 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
 import { PASSWORD, logInToLindenhof, openPage, paceSignIn } from './helpers';
 
-// Runs after swap-flow.spec.ts (alphabetical order, one worker) against the same seeded demo
-// data, so the tests depend on each other's order.
+// Runs in the chromium-people project, which depends on the chromium project (see
+// playwright.config.ts), so it starts only after swap-flow.spec.ts has finished against the
+// same seeded demo data. The tests in this file depend on each other's order.
 test.describe.configure({ mode: 'serial' });
 
 const NEW_HIRE_EMAIL = `newhire+${Date.now()}@shiftswap.test`;
@@ -73,7 +74,7 @@ test('Maria invites a new person who creates an account and joins', async ({ pag
   await page.reload();
   await expect(page.getByRole('heading', { level: 1, name: 'Members' })).toBeVisible();
   const row = page.getByRole('row').filter({ hasText: NEW_HIRE_NAME });
-  await expect(row.getByText('Active')).toBeVisible();
+  await expect(row.getByText('Active', { exact: true })).toBeVisible();
 });
 
 test('Tom reads and clears his notifications', async ({ page }) => {
@@ -81,9 +82,12 @@ test('Tom reads and clears his notifications', async ({ page }) => {
   const nav = page.getByRole('navigation', { name: 'Main' });
   await expect(nav.getByRole('link', { name: /^Notifications \(\d+\)$/ })).toBeVisible();
   await openPage(page, 'Notifications', 'Notifications');
-  const accepted = page.getByText(/Someone accepted the offer for /);
-  await expect(accepted.first()).toBeVisible();
-  await expect(page.getByText('New', { exact: true }).first()).toBeVisible();
+  // The two seeded ACCEPTANCE_RECEIVED items, both still unread.
+  const accepted = page
+    .getByRole('listitem')
+    .filter({ hasText: /Someone accepted the offer for / });
+  await expect(accepted).toHaveCount(2);
+  await expect(accepted.getByText('New', { exact: true })).toHaveCount(2);
   await expectNoSeriousAxeViolations(page);
 
   await page.getByRole('button', { name: 'Mark all as read' }).click();

@@ -35,13 +35,12 @@ describe('CreateOrgPage', () => {
     apiSend.mockReset();
   });
 
-  it('defaults the time zone to a valid value', () => {
+  it("defaults the time zone to the browser's zone", () => {
     renderPage();
     expect(screen.getByRole('heading', { name: 'Create organisation' })).toBeVisible();
     const tz = (screen.getByLabelText('Time zone') as HTMLInputElement).value;
-    // CI runs in UTC (no slash), so only require a zone Intl accepts.
-    expect(tz).not.toBe('');
-    expect(() => new Intl.DateTimeFormat(undefined, { timeZone: tz })).not.toThrow();
+    // Whatever the runner's zone is (UTC in CI), the field starts with exactly that zone.
+    expect(tz).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
   });
 
   it('creates the org, invalidates /me and navigates to it', async () => {
