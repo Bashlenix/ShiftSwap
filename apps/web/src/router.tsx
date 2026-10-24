@@ -1,6 +1,9 @@
 import { createBrowserRouter, Navigate } from 'react-router';
 import { RequireAuth } from './components/RequireAuth';
 import { LoginPage } from './features/auth/LoginPage';
+import { SignUpPage } from './features/auth/SignUpPage';
+import { AcceptInvitePage } from './features/invites/AcceptInvitePage';
+import { CreateOrgPage } from './features/orgs/CreateOrgPage';
 import { AuditPage } from './features/audit/AuditPage';
 import { AvailabilityPage } from './features/availability/AvailabilityPage';
 import { MembersPage } from './features/members/MembersPage';
@@ -15,10 +18,13 @@ import { MyShiftsPage } from './features/shifts/MyShiftsPage';
 
 export const router = createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
+  { path: '/signup', element: <SignUpPage /> },
+  { path: '/invites/:token', element: <AcceptInvitePage /> },
   {
     element: <RequireAuth />,
     children: [
       { path: '/orgs', element: <OrgPickerPage /> },
+      { path: '/orgs/new', element: <CreateOrgPage /> },
       {
         path: '/orgs/:orgId',
         element: <OrgLayout />,

@@ -2,12 +2,13 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { loginSchema, type LoginInput } from '@shiftswap/shared';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { authClient } from '../../lib/auth-client';
+import { safeNext, withNext } from '../../lib/safe-next';
 
 const WRONG_CREDENTIALS = 'Email or password is incorrect.';
 const GENERIC_FAILURE = 'Something went wrong. Please try again.';
@@ -21,6 +22,9 @@ function messageFor(status: number): string {
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const rawNext = params.get('next');
+  const next = safeNext(rawNext);
   const [formError, setFormError] = useState<string | null>(null);
   const {
     register,
@@ -36,7 +40,7 @@ export function LoginPage() {
         setFormError(messageFor(error.status));
         return;
       }
-      await navigate('/orgs');
+      await navigate(next);
     } catch {
       setFormError(GENERIC_FAILURE);
     }
@@ -97,6 +101,14 @@ export function LoginPage() {
               Log in
             </Button>
           </form>
+          <p className="mt-4 text-sm">
+            <Link
+              className="font-medium text-indigo-800 underline"
+              to={withNext('/signup', rawNext ? next : null)}
+            >
+              Create an account
+            </Link>
+          </p>
         </CardContent>
       </Card>
     </main>

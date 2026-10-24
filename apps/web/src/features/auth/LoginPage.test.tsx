@@ -9,13 +9,14 @@ vi.mock('../../lib/auth-client', () => ({
   authClient: { signIn: { email: signInEmail } },
 }));
 
-function renderLogin() {
+function renderLogin(entry = '/login') {
   const router = createMemoryRouter(
     [
       { path: '/login', element: <LoginPage /> },
       { path: '/orgs', element: <p>orgs page</p> },
+      { path: '/invites/:token', element: <p>invite page</p> },
     ],
-    { initialEntries: ['/login'] },
+    { initialEntries: [entry] },
   );
   render(<RouterProvider router={router} />);
   return router;
@@ -82,4 +83,42 @@ describe('LoginPage', () => {
       password: 'secret',
     });
   });
+
+  it('has a link to create an account', () => {
+    renderLogin();
+    expect(screen.getByRole('link', { name: 'Create an account' })).toHaveAttribute(
+      'href',
+      '/signup',
+    );
+  });
+
+  it('carries next into the sign-up link', () => {
+    renderLogin('/login?next=/invites/tok');
+    expect(screen.getByRole('link', { name: 'Create an account' })).toHaveAttribute(
+      'href',
+      '/signup?next=%2Finvites%2Ftok',
+    );
+  });
+
+  async function loginWith(entry: string) {
+    signInEmail.mockResolvedValue({ data: {} });
+    const router = renderLogin(entry);
+    await userEvent.type(screen.getByLabelText('Email'), 'a@b.test');
+    await userEvent.type(screen.getByLabelText('Password'), 'secret');
+    await userEvent.click(screen.getByRole('button', { name: 'Log in' }));
+    return router;
+  }
+
+  it('honours a same-origin next path', async () => {
+    const router = await loginWith('/login?next=/invites/tok');
+    await waitFor(() => expect(router.state.location.pathname).toBe('/invites/tok'));
+  });
+
+  it.each(['//evil.example', '/\\evil.example', 'https://evil.example'])(
+    'ignores open-redirect next %s',
+    async (next) => {
+      const router = await loginWith(`/login?next=${encodeURIComponent(next)}`);
+      await waitFor(() => expect(router.state.location.pathname).toBe('/orgs'));
+    },
+  );
 });
