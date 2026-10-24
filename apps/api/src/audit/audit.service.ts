@@ -1,19 +1,23 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '../generated/prisma/client';
 
+export const AUDIT_ENTITY_TYPES = [
+  'organization',
+  'membership',
+  'skill',
+  'invite',
+  'shift',
+  'offer',
+  'acceptance',
+  'unavailability',
+] as const;
+export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
+
 export interface AuditEntry {
   orgId: string;
   actorMembershipId: string | null;
   action: string;
-  entityType:
-    | 'organization'
-    | 'membership'
-    | 'skill'
-    | 'invite'
-    | 'shift'
-    | 'offer'
-    | 'acceptance'
-    | 'unavailability';
+  entityType: AuditEntityType;
   entityId: string;
   before?: unknown;
   after?: unknown;

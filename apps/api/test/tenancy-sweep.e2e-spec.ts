@@ -510,6 +510,14 @@ describe('tenancy and permission sweep', () => {
       foreign: [offerB],
     },
     {
+      route: 'GET orgs/:orgId/audit',
+      actor: 'manager',
+      expected: 200,
+      managerOnly: true,
+      setup: async () => ({ params: base(), query: '?limit=5' }),
+      foreign: [],
+    },
+    {
       route: 'GET orgs/:orgId/notifications',
       actor: 'employee',
       expected: 200,
