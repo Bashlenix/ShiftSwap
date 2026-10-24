@@ -23,3 +23,12 @@ if logs_leak_token "$big
   echo "FAIL: false positive on redacted log"; exit 1
 fi
 echo "PASS: redacted log accepted"
+
+# Positive control: the redacted route must be present, else "no token" proves nothing.
+logs_show_redacted_invite "$big
+{\"req\":{\"url\":\"/api/v1/invites/:token\"}}" || { echo "FAIL: redacted path not detected"; exit 1; }
+echo "PASS: redacted path detected"
+if logs_show_redacted_invite "$big"; then
+  echo "FAIL: false positive on log without the invite route"; exit 1
+fi
+echo "PASS: missing redacted path detected"
