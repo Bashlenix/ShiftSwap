@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship the remaining SDD "Should" features except CSV: the 7×3 preference grid feeding the ranking (FR-19), email for swap events (FR-20), self-service account deletion with anonymisation (FR-23) and the nightly retention purge (FR-24), plus the small items parked in Plan 3.
+**Goal:** Ship the remaining SDD "Should" features except CSV: the 7×3 preference grid feeding the ranking (FR-19), email for swap events (FR-20), self-service account deletion with anonymisation (FR-23) and the nightly retention purge (FR-24), plus the small items parked in Plan 3, plus three user requests: fix the login bounce, add search and sort to the Members table, and a visual refresh.
 
 **Architecture:**
 - **Preferences:** stored in a new `preferences` table. The eligibility loader reads them inside its existing members query, so it still makes 4 queries, and passes a per-candidate preference to `scoreCandidate`.
@@ -453,7 +453,133 @@ Each item is small; group the commits by area. Where each one comes from: `.supe
 - [ ] **Step 2: Implement** the items, then run `npm test --workspaces && npm run test:e2e -w apps/api -- members` → PASS.
 - [ ] **Step 3: Commit,** one per area: `fix(api): ...`, `fix(web): ...`, `test(scripts): ...`.
 
-### Task 10: E2E, docs and PR
+### Task 10: Login sometimes bounces back to the login form
+
+User report (2026-10-24): "sometimes when I click login, it reset the form and doesn't login but does the second time I do".
+
+**Root-cause hypothesis** (controller, from the code). Verify it with a failing test before fixing.
+- `RequireAuth` reads `authClient.useSession()`. That session store is a nanostores atom in `better-auth` 1.7.12, `dist/client/session-atom.mjs`.
+- After the redirect `/` → `/orgs` → `/login`, the atom holds `{data: null, isPending: false}`.
+- `signIn.email` succeeds and flips `$sessionSignal`, which starts an asynchronous refetch. But `LoginPage` calls `navigate(next)` straight away.
+- `RequireAuth` then renders with the stale `data: null` and does `<Navigate to="/login" replace />`. The `LoginPage` remounts, which resets the form.
+- On the second click, the atom already holds the session.
+
+`SignUpPage` and `AcceptInvitePage` sign in and then navigate the same way.
+
+**Files:**
+- Modify: `apps/web/src/features/auth/LoginPage.tsx`, `apps/web/src/features/auth/SignUpPage.tsx`, `apps/web/src/features/invites/AcceptInvitePage.tsx`, `apps/web/src/components/RequireAuth.tsx`
+- Create: `apps/web/src/lib/session.ts` with `refreshSession(): Promise<void>`. It resolves only after the session store holds the new session. Use the store's own `refetch` (see `session-atom.mjs`) or an equivalent you confirm in that file.
+- Test: `apps/web/src/features/auth/LoginRedirect.test.tsx` (new). It renders the real `router` routes, with `authClient` mocked so the session store updates one macrotask after `signIn` resolves.
+
+- [ ] **Step 1: Write the failing test.**
+  - Start at `/orgs` with no session, which redirects to `/login`.
+  - Fill in the form and submit once.
+  - Expect the org picker heading "Choose an organisation" and no "Log in to ShiftSwap" heading.
+  - Run it on the current code and confirm it FAILS by bouncing back to the login form. If it does not fail, stop: record what you saw in the report and find the real cause with superpowers:systematic-debugging before changing code.
+- [ ] **Step 2: Fix at the source.**
+  - After a successful sign-in or sign-up, `await refreshSession()` before `navigate`, in all three pages.
+  - `RequireAuth` treats `!data && isRefetching` as loading, not as logged out.
+  - Add the same one-click test for sign-up and invite sign-up.
+- [ ] **Step 3: Run** `npm test -w apps/web` → PASS (the existing Login/SignUp/AcceptInvite tests still pass).
+- [ ] **Step 4: Commit:** `fix(web): wait for the session before leaving the login page`
+
+### Task 11: Search and sort on the Members page
+
+**Files:**
+- Modify: `apps/web/src/features/members/MembersPage.tsx`
+- Create: `apps/web/src/features/members/member-table.ts`, which holds the pure filter and sort helpers.
+- Test: `apps/web/src/features/members/member-table.test.ts`, `apps/web/src/features/members/MembersPage.test.tsx`
+
+**Interfaces:**
+- Produces:
+  - `filterMembers(members: MemberDto[], query: string, skillName: (id: string) => string): MemberDto[]`
+  - `sortMembers(members: MemberDto[], key: MemberSortKey, dir: 'asc' | 'desc', skillName: (id: string) => string): MemberDto[]`
+  - `MemberSortKey = 'name' | 'access' | 'skills' | 'weeklyLimit' | 'status'`
+
+**Search rules:**
+- Client-side; the list is at most 100 members, so no API change.
+- Case- and accent-insensitive (`normalize('NFD')`, strip combining marks).
+- Matches display name, email, skill names and the access-level label.
+- Trimmed; an empty query matches everyone.
+
+**Sort rules:**
+- name: `localeCompare` with base sensitivity.
+- access: Employee < Manager < Admin.
+- skills: by the number of skills, then by name.
+- weeklyLimit: the member's own limit, with null (the org default) last.
+- status: the badge order Active < Invited < No login < Deactivated, using the same mapping as the existing `badgeFor`.
+- Ties break by name, then by id.
+
+**UI:**
+- Above the table: a search input labelled "Search members" (`type="search"`).
+- Under it, in a `role="status"` region: "Showing {n} of {total} members".
+- Each sortable `<th>` holds a `<button>` with the column name. The `th` carries `aria-sort` set to `ascending`, `descending` or `none`. Clicking toggles asc → desc. The default is Name ascending.
+- When nothing matches, one row reads: `No members match "{query}".`
+- The "Show deactivated" toggle and the row actions are unchanged.
+
+- [ ] **Step 1: Write the failing unit tests** for each search and sort rule above. Include:
+  - "jose" matches "José";
+  - null weekly limits sort last in both directions;
+  - the tie-break rule.
+- [ ] **Step 2: Write the failing page tests:**
+  - Typing "barista" filters the rows and updates the count text.
+  - Clicking "Weekly limit" twice sets `aria-sort="descending"` and reverses the order.
+  - The no-match row appears.
+- [ ] **Step 3: Implement.** Run `npm test -w apps/web` → PASS; lint → clean.
+- [ ] **Step 4: Commit:** `feat(web): search and sort the members table`
+
+### Task 12: Visual refresh
+
+User request (2026-10-24): "beautify the interface and the main page".
+
+Controller ruling: "the main page" means the screens a person sees first:
+- the login page;
+- the org picker at `/orgs`, which every login lands on;
+- the org shell (the header and navigation shown on every org screen);
+- My Shifts, the org's index page.
+
+Every other page gets the shared components, so the whole app looks consistent.
+
+**Hard rules:**
+- **Visual only.** Every heading text, label, button text, link text, `role` and accessible name used by unit or E2E tests stays byte-identical. Run `grep -rn "getByRole\|getByText\|getByLabel" e2e apps/web/src` before changing copy. Do not change copy.
+- **WCAG 2.2 AA:**
+  - text contrast ≥ 4.5:1;
+  - UI-element contrast ≥ 3:1;
+  - visible focus rings;
+  - touch targets ≥ 44 px on employee screens;
+  - `prefers-reduced-motion` respected;
+  - no horizontal page scroll at 320 px (tables may scroll inside their own container).
+- **Dependencies:** no new runtime dependency except `lucide-react` for icons. Icons are `aria-hidden` and never the only label. Use the system font stack (no web fonts, so it works offline in a Codespace).
+- Status badges keep their text.
+
+**Files:**
+- Modify: `apps/web/src/index.css`. Add design tokens in Tailwind v4 `@theme`:
+  - colours: brand `indigo-700`/`indigo-800`, surface white, page `slate-50`, muted `slate-600`, danger `red-700`, success `emerald-700`;
+  - radius `0.75rem`;
+  - one soft shadow.
+- Modify: `apps/web/src/components/ui/{button,card,input,label,dialog}.tsx` to use the tokens.
+- Create in `apps/web/src/components/ui/`:
+  - `page-header.tsx`: an `h1` with optional description and actions.
+  - `badge.tsx`: neutral/success/warning/danger/brand. `StatusBadge` uses it.
+  - `table.tsx`: `Table`, `THead`, `TH`, `TR`, `TD` styling wrappers. The `aria-sort` buttons from Task 11 keep working.
+  - `empty-state.tsx`.
+- Modify: `apps/web/src/features/org/OrgLayout.tsx`:
+  - A sticky top bar with the "ShiftSwap" wordmark, the current org name (still linking to `/orgs`), an "Account" link (added by Task 7) and "Log out".
+  - Navigation: on screens ≥ `lg`, a left sidebar with grouped sections ("My work": My shifts, Open offers, Availability, Notifications; "Team": Schedule, Review, Members, Audit; "Admin": Settings). Below `lg`, a horizontally scrollable pill bar.
+  - The active link uses `aria-current="page"`, which NavLink already sets.
+  - The unread count badge is unchanged in text.
+- Modify:
+  - `apps/web/src/features/auth/LoginPage.tsx`, `SignUpPage.tsx`, `features/invites/AcceptInvitePage.tsx`, `features/orgs/CreateOrgPage.tsx`: a two-column layout on ≥ `md` screens. One side is a brand panel with the wordmark and "Swap shifts without the group chat." The other side is the existing form card. Mobile shows the card only.
+  - `apps/web/src/features/orgs/OrgPickerPage.tsx`: a header greeting "Welcome back, {first name}" (from `useMe`). Org cards in a responsive grid, each with the org's initial in a circle, its name and an access badge, with the same link text as today. A "Create organisation" card. Account and Log out in the header.
+  - Every page under `features/`: use `PageHeader`, the table wrappers and `EmptyState` where they fit, with no behaviour changes.
+
+- [ ] **Step 1: Snapshot the copy.** Grep the copy and roles used by the tests into the report, so the reviewer can check that none changed.
+- [ ] **Step 2: Implement** the tokens and components, then the shell, the auth screens and the picker, then apply them to the remaining pages, one commit each.
+- [ ] **Step 3: Run** `npm test -w apps/web` → PASS without editing any test assertion, apart from tests that check class names, if any exist. Run `npm run lint -w apps/web` and typecheck → clean.
+- [ ] **Step 4: Take screenshots.** Run the web app locally (`npm run dev -w apps/web`) with the API mocked by a small Playwright route stub, or describe in the report why this wasn't possible. Save screenshots of login, picker, My Shifts and Members at 390 px and 1280 px to `.superpowers/sdd/<plan>/screens/` for the controller.
+- [ ] **Step 5: Commits:** `style(web): design tokens and shared UI components`, `style(web): app shell and navigation`, `style(web): auth screens and organisation picker`, `style(web): apply page header and tables across pages`
+
+### Task 13: E2E, docs and PR
 
 **Files:**
 - Modify: `e2e/tests/swap-flow.spec.ts`. After Tom approves Lukas, poll Mailpit with `GET /mailpit/api/v1/search?query=to:lukas@shiftswap.test` until a message with the subject containing `You got the shift` appears (`toPass`, 20 s timeout). Open `/mailpit/api/v1/message/{ID}` and assert the text contains `/me/shifts`.
@@ -465,6 +591,8 @@ Each item is small; group the commits by area. Where each one comes from: `.supe
 - Create: `e2e/tests/account-flow.spec.ts` (`chromium` project), using unique emails `del-<timestamp>@example.test`:
   - **Case A:** sign up → the org picker loads → Account → delete → `/login` shows "Your account was deleted." → logging in with the old credentials fails. axe runs on the Account page.
   - **Case B:** sign up → create an org → Account → delete → the `LAST_ADMIN` message names the new org.
+- Create: `e2e/tests/login.spec.ts` (`chromium` project): a cold start at `/` redirects to `/login`. One click on "Log in" as Anna lands on "Choose an organisation". This is the regression for Task 10.
+- Modify: `e2e/tests/people-flow.spec.ts`: search the Members page for "jonas" and expect one row.
 - Modify: `README.md`, `DEMO_ACCOUNTS.md`:
   - Lukas and Mia have seeded preferences that change the L5 ranking (Lukas +40, Mia +0).
   - Swap events send email, visible at `/mailpit/`.
