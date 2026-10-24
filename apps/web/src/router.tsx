@@ -2,6 +2,7 @@ import { createBrowserRouter, Navigate } from 'react-router';
 import { RequireAuth } from './components/RequireAuth';
 import { LoginPage } from './features/auth/LoginPage';
 import { AvailabilityPage } from './features/availability/AvailabilityPage';
+import { MembersPage } from './features/members/MembersPage';
 import { OpenOffersPage } from './features/offers/OpenOffersPage';
 import { OfferReviewPage } from './features/review/OfferReviewPage';
 import { SchedulePage } from './features/schedule/SchedulePage';
@@ -24,6 +25,7 @@ export const router = createBrowserRouter([
           { path: 'offers', element: <OpenOffersPage /> },
           { path: 'me/availability', element: <AvailabilityPage /> },
           { path: 'schedule', element: <SchedulePage /> },
+          { path: 'members', element: <MembersPage /> },
           { path: 'review', element: <OfferReviewPage /> },
           { path: 'review/:offerId', element: <OfferReviewPage /> },
         ],

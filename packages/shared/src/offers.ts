@@ -63,6 +63,14 @@ export interface MemberDto {
   weeklyLimitMin: number | null;
 }
 
+/** Response of `POST …/members/:membershipId/deactivate`. */
+export interface DeactivationResult {
+  cancelledOffers: number;
+  reposted: number;
+  unassigned: number;
+  withdrawnAcceptances: number;
+}
+
 export interface CreateMemberResponse {
   member: MemberDto;
   inviteLink: string | null;

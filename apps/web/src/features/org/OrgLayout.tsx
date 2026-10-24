@@ -69,6 +69,9 @@ export function OrgLayout() {
                 <NavLink to={`${base}/review`} className={navClass}>
                   Offer review
                 </NavLink>
+                <NavLink to={`${base}/members`} className={navClass}>
+                  Members
+                </NavLink>
               </>
             )}
           </nav>

@@ -93,6 +93,7 @@ describe('OrgLayout', () => {
     await screen.findByText('tz Europe/Berlin');
     expect(screen.queryByRole('link', { name: 'Schedule' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Offer review' })).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Members' })).toBeNull();
   });
 
   it('shows Schedule and Offer review to managers', async () => {
@@ -108,6 +109,10 @@ describe('OrgLayout', () => {
     expect(screen.getByRole('link', { name: 'Offer review' })).toHaveAttribute(
       'href',
       '/orgs/o1/review',
+    );
+    expect(screen.getByRole('link', { name: 'Members' })).toHaveAttribute(
+      'href',
+      '/orgs/o1/members',
     );
   });
 });

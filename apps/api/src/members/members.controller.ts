@@ -15,6 +15,7 @@ import {
   updateMemberSchema,
   type CreateMemberInput,
   type CreateMemberResponse,
+  type DeactivationResult,
   type MemberDto,
   type ResendInviteInput,
   type UpdateMemberInput,
@@ -25,7 +26,7 @@ import { ZodBody } from '../common/zod-body.pipe';
 import { MinAccess } from '../tenancy/min-access.decorator';
 import { Org, type OrgContext } from '../tenancy/org-context.decorator';
 import { OrgGuard } from '../tenancy/org.guard';
-import { DeactivationService, type DeactivationResult } from './deactivation.service';
+import { DeactivationService } from './deactivation.service';
 import { MembersService } from './members.service';
 
 @Controller('orgs/:orgId/members')

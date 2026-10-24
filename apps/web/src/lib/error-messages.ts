@@ -37,6 +37,19 @@ export function errorMessage(err: unknown, opts: { candidate?: string } = {}): s
       return "You don't have permission to do that.";
     case 'NOT_FOUND':
       return 'This item no longer exists.';
+    case 'LAST_ADMIN':
+      return 'An organisation needs at least one admin.';
+    case 'ALREADY_MEMBER':
+      // The server words the deactivated-email case differently; keep that.
+      return err.serverMessage || 'This email already belongs to a member.';
+    case 'INVITE_INVALID':
+      return 'This invite is no longer valid.';
+    case 'SKILL_IN_USE':
+      return 'This skill is still required by upcoming shifts.';
+    case 'EMAIL_MISMATCH':
+      return 'This invite is for a different email address.';
+    case 'RATE_LIMITED':
+      return 'Too many requests. Please wait a moment and try again.';
     default:
       return GENERIC;
   }

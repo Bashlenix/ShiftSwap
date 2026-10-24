@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { MemberDto } from '@shiftswap/shared';
+import type { DeactivationResult, MemberDto } from '@shiftswap/shared';
 import { AuditService } from '../audit/audit.service';
 import { DomainError } from '../common/domain-error';
 import type { Prisma } from '../generated/prisma/client';
@@ -20,14 +20,6 @@ import { lockMemberAndAdmins, lockOpenInvites } from './admin-locks';
 import { toMemberDto } from './members.service';
 
 type Tx = Prisma.TransactionClient;
-
-/** Response of `POST …/members/:membershipId/deactivate`. */
-export interface DeactivationResult {
-  cancelledOffers: number;
-  reposted: number;
-  unassigned: number;
-  withdrawnAcceptances: number;
-}
 
 const RETRY = Symbol('retry');
 const MAX_ATTEMPTS = 3;

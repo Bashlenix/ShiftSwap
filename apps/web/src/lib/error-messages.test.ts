@@ -25,6 +25,11 @@ describe('errorMessage', () => {
     ['INVALID_TRANSITION', 'This offer is no longer open.'],
     ['FORBIDDEN', "You don't have permission to do that."],
     ['NOT_FOUND', 'This item no longer exists.'],
+    ['LAST_ADMIN', 'An organisation needs at least one admin.'],
+    ['INVITE_INVALID', 'This invite is no longer valid.'],
+    ['SKILL_IN_USE', 'This skill is still required by upcoming shifts.'],
+    ['EMAIL_MISMATCH', 'This invite is for a different email address.'],
+    ['RATE_LIMITED', 'Too many requests. Please wait a moment and try again.'],
   ] as const)('maps %s', (code, text) => {
     expect(errorMessage(new ApiError(409, { error: { code, message: 'x' } }))).toBe(text);
   });
@@ -62,5 +67,20 @@ describe('errorMessage', () => {
   it('falls back for unknown errors', () => {
     expect(errorMessage(new Error('boom'))).toBe('Something went wrong. Please try again.');
     expect(errorMessage(new ApiError(500))).toBe('Something went wrong. Please try again.');
+  });
+
+  it('falls back to the fixed text for ALREADY_MEMBER without a server message', () => {
+    const err = new ApiError(409, { error: { code: 'ALREADY_MEMBER', message: '' } });
+    expect(errorMessage(err)).toBe('This email already belongs to a member.');
+  });
+
+  it('prefers the server message for ALREADY_MEMBER', () => {
+    const err = new ApiError(409, {
+      error: {
+        code: 'ALREADY_MEMBER',
+        message: 'This person was deactivated. Reactivate them instead.',
+      },
+    });
+    expect(errorMessage(err)).toBe('This person was deactivated. Reactivate them instead.');
   });
 });
