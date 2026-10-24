@@ -11,6 +11,7 @@ import { OffersModule } from './offers/offers.module';
 import { MeController } from './me/me.controller';
 import { HealthController } from './health/health.controller';
 import type { PrismaClient } from './generated/prisma/client';
+import { MailModule } from './mail/mail.module';
 import { PrismaModule } from './prisma/prisma.module';
 
 @Module({})
@@ -39,6 +40,7 @@ export class AppModule {
         }),
         PrismaModule.register(options.prisma),
         AuthModule.register(env),
+        MailModule,
         AuditModule,
         DirectoryModule,
         ShiftsModule,

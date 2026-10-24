@@ -13,7 +13,7 @@ Password for every account: `ShiftSwap-Demo-2026`
 
 Placeholder (no login, no email): Paul Weber, Café Lindenhof — EMPLOYEE.
 
-Demo inbox (Mailpit): not exposed yet — no feature sends email yet.
+Demo inbox: open /mailpit/ on the app address.
 
 ## Two-minute demo
 

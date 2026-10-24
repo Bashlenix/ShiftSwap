@@ -35,7 +35,7 @@ Seeded shifts are relative to today (Europe/Berlin) and reset on every API start
 2. Log in as Lukas → Open offers does not list the Barista open shift (he fails the daily hour limit and minimum rest).
 3. Log in as Anna → Open offers → claim the Barista shift.
 
-No feature sends email yet, so the demo inbox (Mailpit) is not exposed in the Codespace.
+Demo inbox: open `/mailpit/` on the app address (the same address as the app, for example `<app address>/mailpit/`).
 
 If no tab opened: Ports tab → ShiftSwap (port 5173) → globe icon.
 

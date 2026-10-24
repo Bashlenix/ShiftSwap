@@ -40,6 +40,8 @@ logs_leak_emails() { grep -qiE 'shiftswap\.test' <<<"$1"; }
 main() {
   [ "$(code "$BASE/login")" = "200" ] && pass "GET /login -> 200" || fail "GET /login"
 
+  [ "$(code "$BASE/mailpit/")" = "200" ] && pass "GET /mailpit/ -> 200" || fail "GET /mailpit/"
+
   [ "$(sign_in)" = "200" ] && pass "sign-in -> 200" || fail "sign-in"
 
   me="$(curl -s -b "$JAR" "$BASE/api/v1/me")"
