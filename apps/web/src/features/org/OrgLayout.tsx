@@ -13,6 +13,7 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
+import { useCallback, useRef } from 'react';
 import { NavLink, Outlet, Link, useParams } from 'react-router';
 import { Wordmark } from '../../components/Brand';
 import { Button } from '../../components/ui/button';
@@ -34,9 +35,9 @@ const headerLink =
   'inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-brand-strong underline-offset-4 hover:underline';
 
 /**
- * Callback ref for the main nav: on phones the pills scroll sideways, so bring the current page's
- * pill into view when the nav mounts (e.g. after a deep link to Settings). No-op when nothing
- * overflows (the lg sidebar), so it never moves the page.
+ * On phones the pills scroll sideways, so bring the current page's pill into view when the nav
+ * mounts (e.g. after a deep link to Settings). No-op when nothing overflows (the lg sidebar), so
+ * it never moves the page.
  */
 function revealActivePill(nav: HTMLElement | null) {
   if (!nav || nav.scrollWidth <= nav.clientWidth) return;
@@ -96,6 +97,26 @@ export function OrgLayout() {
   const unread = useUnreadCount(
     data?.memberships.some((m) => m.organizationId === orgId) ? orgId : undefined,
   );
+
+  // Late content (the unread badge, the Team group) widens the pill row after mount; reveal again
+  // on every resize until the user starts scrolling or using the pills themselves.
+  const navTouched = useRef(false);
+  const navObserver = useRef<ResizeObserver | null>(null);
+  const navMounted = useCallback((node: HTMLElement | null) => {
+    navObserver.current?.disconnect();
+    navObserver.current = null;
+    if (!node) return;
+    revealActivePill(node);
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (!navTouched.current) revealActivePill(node);
+    });
+    for (const child of Array.from(node.children)) observer.observe(child);
+    navObserver.current = observer;
+  }, []);
+  const touchNav = () => {
+    navTouched.current = true;
+  };
 
   if (isPending) return <p className="p-4">Loading…</p>;
   if (isError)
@@ -169,7 +190,10 @@ export function OrgLayout() {
         </header>
         <div className="mx-auto max-w-7xl lg:flex lg:gap-8 lg:px-4">
           <nav
-            ref={revealActivePill}
+            ref={navMounted}
+            onPointerDown={touchNav}
+            onWheel={touchNav}
+            onKeyDown={touchNav}
             aria-label="Main"
             className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-surface px-4 py-2 lg:sticky lg:top-16 lg:w-56 lg:shrink-0 lg:flex-col lg:self-start lg:overflow-visible lg:border-0 lg:bg-transparent lg:px-0 lg:py-4"
           >

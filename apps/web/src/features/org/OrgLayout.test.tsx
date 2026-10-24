@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrgLayout } from './OrgLayout';
@@ -165,6 +165,7 @@ describe('OrgLayout', () => {
   describe('mobile nav scroll', () => {
     const scrollIntoView = vi.fn();
     const restore: (() => void)[] = [];
+    let observers: { targets: Element[]; fire: () => void }[] = [];
     /** jsdom has no layout: fake an overflowing nav and the reduced-motion query. */
     function fakeLayout(reduced: boolean) {
       const proto = HTMLElement.prototype;
@@ -174,6 +175,19 @@ describe('OrgLayout', () => {
       Object.defineProperty(proto, 'clientWidth', { configurable: true, get: () => 390 });
       const siv = Element.prototype.scrollIntoView;
       Element.prototype.scrollIntoView = scrollIntoView;
+      const ro = globalThis.ResizeObserver;
+      observers = [];
+      globalThis.ResizeObserver = class {
+        targets: Element[] = [];
+        constructor(cb: () => void) {
+          observers.push({ targets: this.targets, fire: cb });
+        }
+        observe(el: Element) {
+          this.targets.push(el);
+        }
+        unobserve() {}
+        disconnect() {}
+      } as unknown as typeof ResizeObserver;
       const mm = window.matchMedia;
       window.matchMedia = ((q: string) => ({
         matches: reduced && q === '(prefers-reduced-motion: reduce)',
@@ -184,6 +198,7 @@ describe('OrgLayout', () => {
         if (cw) Object.defineProperty(proto, 'clientWidth', cw);
         window.matchMedia = mm;
         Element.prototype.scrollIntoView = siv;
+        globalThis.ResizeObserver = ro;
       });
     }
     afterEach(() => {
@@ -204,6 +219,24 @@ describe('OrgLayout', () => {
         inline: 'nearest',
         behavior: 'smooth',
       });
+    });
+
+    it('re-reveals when the pill row resizes, until the user touches the nav', async () => {
+      fakeLayout(false);
+      apiFetch.mockResolvedValue(me);
+      renderAt('/orgs/o1/offers');
+      await screen.findByText('offers page');
+      expect(observers).toHaveLength(1);
+      expect(observers[0].targets.length).toBeGreaterThan(0);
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+      act(() => observers[0].fire());
+      expect(scrollIntoView).toHaveBeenCalledTimes(2);
+      expect(scrollIntoView.mock.contexts[1]).toBe(screen.getByRole('link', { current: 'page' }));
+
+      fireEvent.pointerDown(screen.getByRole('navigation', { name: 'Main' }));
+      act(() => observers[0].fire());
+      expect(scrollIntoView).toHaveBeenCalledTimes(2);
     });
 
     it('jumps without animation under reduced motion', async () => {
