@@ -32,3 +32,31 @@ export interface NotificationDto {
   readAt: string | null;
   createdAt: string;
 }
+
+/** Types that are also emailed; MEMBER_DEACTIVATED stays in-app only. */
+export const EMAIL_NOTIFICATION_TYPES: readonly NotificationType[] = NOTIFICATION_TYPES.filter(
+  (t) => t !== 'MEMBER_DEACTIVATED',
+);
+
+/** App path (no origin) a notification should open. */
+export function notificationPath(
+  orgId: string,
+  n: Pick<NotificationDto, 'type' | 'payload'>,
+): string {
+  const base = `/orgs/${orgId}`;
+  if (n.payload?.role === 'manager')
+    return n.payload.offerId ? `${base}/review/${n.payload.offerId}` : `${base}/review`;
+  switch (n.type) {
+    case 'OFFER_CREATED':
+    case 'ACCEPTANCE_INVALIDATED':
+      return `${base}/offers`;
+    case 'OFFER_APPROVED':
+    case 'OFFER_REJECTED':
+    case 'OFFER_EXPIRED':
+    case 'ACCEPTANCE_RECEIVED':
+    case 'OPEN_SHIFT_FILLED':
+      return `${base}/me/shifts`;
+    default:
+      return `${base}/notifications`;
+  }
+}

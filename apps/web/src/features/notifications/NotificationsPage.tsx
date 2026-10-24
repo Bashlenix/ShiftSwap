@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import type { NotificationDto } from '@shiftswap/shared';
+import { notificationText, type NotificationDto } from '@shiftswap/shared';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { Feedback } from '../../components/Feedback';
@@ -8,7 +8,6 @@ import { apiFetch, apiSend } from '../../lib/api';
 import { formatDateTime } from '../../lib/format';
 import { errorMessage } from '../../lib/error-messages';
 import { orgApi, useOrg, type OrgInfo } from '../org/useOrg';
-import { notificationText } from './notification-text';
 import { unreadKey } from './useUnreadCount';
 
 interface Page {
