@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SkillDto } from '@shiftswap/shared';
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { Feedback } from '../../components/Feedback';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -27,7 +27,9 @@ export function SkillsSection() {
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const headingRef = useRef<HTMLHeadingElement>(null);
 
   const skills = useQuery({
     queryKey: ['skills', org.organizationId],
@@ -42,6 +44,7 @@ export function SkillsSection() {
       await work();
       await queryClient.invalidateQueries({ queryKey: ['skills', org.organizationId] });
       setNotice(done);
+      headingRef.current?.focus();
     } catch (err) {
       setError(skillError(err));
     } finally {
@@ -69,7 +72,12 @@ export function SkillsSection() {
 
   return (
     <section aria-labelledby="skills-heading" className="flex flex-col gap-3">
-      <h2 id="skills-heading" className="text-xl font-semibold">
+      <h2
+        id="skills-heading"
+        ref={headingRef}
+        tabIndex={-1}
+        className="text-xl font-semibold outline-none"
+      >
         Skills
       </h2>
       <Feedback error={error} notice={notice} />
@@ -123,20 +131,47 @@ export function SkillsSection() {
                   >
                     Rename
                   </Button>
-                  <Button
-                    variant="outline"
-                    className="h-8 px-3"
-                    disabled={pending}
-                    aria-label={`Delete ${s.name}`}
-                    onClick={() =>
-                      void run(
-                        () => apiSend('DELETE', orgApi(org, `/skills/${s.id}`)),
-                        'Skill deleted.',
-                      )
-                    }
-                  >
-                    Delete
-                  </Button>
+                  {confirming === s.id ? (
+                    <span
+                      role="group"
+                      aria-label={`Confirm deleting ${s.name}`}
+                      className="flex flex-wrap items-center gap-2"
+                    >
+                      <span className="text-sm">
+                        Delete skill {s.name}? It will also be removed from people who have it.
+                      </span>
+                      <Button
+                        className="h-8 px-3"
+                        disabled={pending}
+                        onClick={() => {
+                          setConfirming(null);
+                          void run(
+                            () => apiSend('DELETE', orgApi(org, `/skills/${s.id}`)),
+                            'Skill deleted.',
+                          );
+                        }}
+                      >
+                        Yes, delete
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="h-8 px-3"
+                        onClick={() => setConfirming(null)}
+                      >
+                        Keep skill
+                      </Button>
+                    </span>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      className="h-8 px-3"
+                      disabled={pending}
+                      aria-label={`Delete ${s.name}`}
+                      onClick={() => setConfirming(s.id)}
+                    >
+                      Delete
+                    </Button>
+                  )}
                 </>
               )}
             </li>

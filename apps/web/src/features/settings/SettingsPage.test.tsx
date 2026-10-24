@@ -130,10 +130,66 @@ describe('SettingsPage', () => {
         },
       }),
     );
-    const daily = await screen.findByLabelText('Maximum hours per day (h)');
-    await userEvent.clear(daily);
-    await userEvent.type(daily, '0.5');
+    await userEvent.type(await screen.findByLabelText('Name'), '!');
     await userEvent.click(screen.getByRole('button', { name: 'Save settings' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Must be at least 60');
+  });
+
+  it('does not re-send untouched fields whose hour display is rounded', async () => {
+    apiFetch.mockImplementation((path: string) =>
+      Promise.resolve(path.endsWith('/skills') ? [] : { ...orgDto, minRestMin: 1235 }),
+    );
+    apiSend.mockResolvedValue(orgDto);
+    renderWithOrg(<SettingsPage />, ADMIN);
+    const name = await screen.findByLabelText('Name');
+    await userEvent.type(name, '!');
+    await userEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+    expect(apiSend).toHaveBeenCalledWith('PATCH', '/api/v1/orgs/org-1', {
+      name: 'Café Lindenhof!',
+    });
+  });
+
+  it.each([
+    ['Weekly hour limit (h)', '81', 'Weekly hour limit must be between 1 and 80 hours.'],
+    ['Weekly hour limit (h)', '0.5', 'Weekly hour limit must be between 1 and 80 hours.'],
+    [
+      'Minimum rest between shifts (h)',
+      '25',
+      'Minimum rest between shifts must be between 0 and 24 hours.',
+    ],
+    ['Maximum hours per day (h)', '0', 'Maximum hours per day must be between 1 and 24 hours.'],
+    ['Maximum hours per day (h)', '25', 'Maximum hours per day must be between 1 and 24 hours.'],
+    [
+      'Offer closes before shift start (h)',
+      '49',
+      'Offer closes before shift start must be between 0 and 48 hours.',
+    ],
+    [
+      'Offer closes before shift start (h)',
+      '-1',
+      'Offer closes before shift start must be between 0 and 48 hours.',
+    ],
+  ])('blocks %s = %s with an hour message next to the field', async (label, value, message) => {
+    setup();
+    const input = await screen.findByLabelText(label);
+    await userEvent.clear(input);
+    await userEvent.type(input, value);
+    await userEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+    expect(apiSend).not.toHaveBeenCalled();
+    expect(await screen.findByText(message)).toBeVisible();
+    expect(input).toHaveAttribute('aria-invalid', 'true');
+    expect(input).toHaveAccessibleDescription(message);
+  });
+
+  it('accepts the range limits', async () => {
+    setup();
+    apiSend.mockResolvedValue(orgDto);
+    const input = await screen.findByLabelText('Weekly hour limit (h)');
+    await userEvent.clear(input);
+    await userEvent.type(input, '80');
+    await userEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+    expect(apiSend).toHaveBeenCalledWith('PATCH', '/api/v1/orgs/org-1', {
+      defaultWeeklyLimitMin: 4800,
+    });
   });
 });

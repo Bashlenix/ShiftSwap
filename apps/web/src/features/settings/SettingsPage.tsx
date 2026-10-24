@@ -11,12 +11,38 @@ import { SkillsSection } from './SkillsSection';
 
 type HourField = 'defaultWeeklyLimitMin' | 'minRestMin' | 'maxDailyMin' | 'offerLeadTimeMin';
 
-const HOUR_FIELDS: { key: HourField; label: string }[] = [
-  { key: 'defaultWeeklyLimitMin', label: 'Weekly hour limit (h)' },
-  { key: 'minRestMin', label: 'Minimum rest between shifts (h)' },
-  { key: 'maxDailyMin', label: 'Maximum hours per day (h)' },
-  { key: 'offerLeadTimeMin', label: 'Offer closes before shift start (h)' },
+const HOUR_FIELDS: { key: HourField; label: string; name: string; min: number; max: number }[] = [
+  {
+    key: 'defaultWeeklyLimitMin',
+    label: 'Weekly hour limit (h)',
+    name: 'Weekly hour limit',
+    min: 1,
+    max: 80,
+  },
+  {
+    key: 'minRestMin',
+    label: 'Minimum rest between shifts (h)',
+    name: 'Minimum rest between shifts',
+    min: 0,
+    max: 24,
+  },
+  {
+    key: 'maxDailyMin',
+    label: 'Maximum hours per day (h)',
+    name: 'Maximum hours per day',
+    min: 1,
+    max: 24,
+  },
+  {
+    key: 'offerLeadTimeMin',
+    label: 'Offer closes before shift start (h)',
+    name: 'Offer closes before shift start',
+    min: 0,
+    max: 48,
+  },
 ];
+
+const ZONES = Intl.supportedValuesOf('timeZone');
 
 const toHours = (min: number) => String(Math.round(min / 6) / 10);
 
@@ -48,18 +74,20 @@ function SettingsForm({ current }: { current: OrgDto }) {
   const queryClient = useQueryClient();
   const [name, setName] = useState(current.name);
   const [timezone, setTimezone] = useState(current.timezone);
-  const [hours, setHours] = useState<Record<HourField, string>>({
+  // Display strings are lossy (1235 min shows as 20.6 h), so untouched fields are never re-sent.
+  const [initialHours] = useState<Record<HourField, string>>({
     defaultWeeklyLimitMin: toHours(current.defaultWeeklyLimitMin),
     minRestMin: toHours(current.minRestMin),
     maxDailyMin: toHours(current.maxDailyMin),
     offerLeadTimeMin: toHours(current.offerLeadTimeMin),
   });
+  const [hours, setHours] = useState<Record<HourField, string>>(initialHours);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<HourField, string>>>({});
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  const zones = Intl.supportedValuesOf('timeZone');
-  if (!zones.includes(current.timezone)) zones.push(current.timezone);
+  const zones = ZONES.includes(current.timezone) ? ZONES : [...ZONES, current.timezone];
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -68,16 +96,18 @@ function SettingsForm({ current }: { current: OrgDto }) {
     const changes: OrgSettingsInput = {};
     if (name.trim() !== current.name) changes.name = name.trim();
     if (timezone !== current.timezone) changes.timezone = timezone;
-    for (const { key } of HOUR_FIELDS) {
+    const errors: Partial<Record<HourField, string>> = {};
+    for (const { key, name, min, max } of HOUR_FIELDS) {
       const raw = hours[key].trim();
+      if (raw === initialHours[key]) continue;
       const value = raw === '' ? NaN : Number(raw);
-      if (!Number.isFinite(value)) {
-        setError('Enter a number of hours.');
-        return;
-      }
-      const minutes = Math.round(value * 60);
-      if (minutes !== current[key]) changes[key] = minutes;
+      if (!Number.isFinite(value)) errors[key] = 'Enter a number of hours.';
+      else if (value < min || value > max)
+        errors[key] = `${name} must be between ${min} and ${max} hours.`;
+      else changes[key] = Math.round(value * 60);
     }
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
     if (Object.keys(changes).length === 0) {
       setNotice('No changes to save.');
       return;
@@ -140,11 +170,17 @@ function SettingsForm({ current }: { current: OrgDto }) {
             id={`org-${key}`}
             type="number"
             inputMode="decimal"
-            step="0.1"
-            min="0"
+            step="any"
+            aria-invalid={fieldErrors[key] ? true : undefined}
+            aria-describedby={fieldErrors[key] ? `org-${key}-error` : undefined}
             value={hours[key]}
             onChange={(e) => setHours({ ...hours, [key]: e.target.value })}
           />
+          {fieldErrors[key] && (
+            <p id={`org-${key}-error`} role="alert" className="text-sm text-red-700">
+              {fieldErrors[key]}
+            </p>
+          )}
         </div>
       ))}
       <p className="text-sm text-slate-700">

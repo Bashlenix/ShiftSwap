@@ -72,6 +72,7 @@ describe('SkillsSection', () => {
       name: 'Barista II',
     });
     expect(await screen.findByText('Skill renamed.')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Skills' })).toHaveFocus();
   });
 
   it('cancels a rename', async () => {
@@ -86,8 +87,22 @@ describe('SkillsSection', () => {
     setup();
     apiSend.mockResolvedValue(undefined);
     await userEvent.click(await screen.findByRole('button', { name: 'Delete Kitchen' }));
+    expect(
+      screen.getByText('Delete skill Kitchen? It will also be removed from people who have it.'),
+    ).toBeVisible();
+    expect(apiSend).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Yes, delete' }));
     expect(apiSend).toHaveBeenCalledWith('DELETE', '/api/v1/orgs/org-1/skills/s2');
     expect(await screen.findByText('Skill deleted.')).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Skills' })).toHaveFocus();
+  });
+
+  it('keeps the skill when delete is not confirmed', async () => {
+    setup();
+    await userEvent.click(await screen.findByRole('button', { name: 'Delete Kitchen' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Keep skill' }));
+    expect(apiSend).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Delete Kitchen' })).toBeVisible();
   });
 
   it.each([
@@ -98,6 +113,7 @@ describe('SkillsSection', () => {
     setup();
     apiSend.mockRejectedValue(conflict('SKILL_IN_USE', details));
     await userEvent.click(await screen.findByRole('button', { name: 'Delete Kitchen' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Yes, delete' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(text);
   });
 });
