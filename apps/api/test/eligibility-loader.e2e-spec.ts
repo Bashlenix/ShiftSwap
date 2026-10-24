@@ -100,6 +100,32 @@ describe('EligibilityLoader', () => {
     expect(median(times)).toBeLessThan(200);
   });
 
+  it('derives the preference from stored weekly rows (neutral without rows)', async () => {
+    const preferring = await makeMember(ctx, orgId, { accessLevel: 'EMPLOYEE' });
+    const neutral = await makeMember(ctx, orgId, { accessLevel: 'EMPLOYEE' });
+    // Monday 18:00-23:00 Berlin (CET, UTC+1) = Evening, weekday 0.
+    const evening = {
+      ...target(),
+      startAt: new Date('2030-01-07T17:00:00Z'),
+      endAt: new Date('2030-01-07T22:00:00Z'),
+    };
+    await ctx.prisma.preference.create({
+      data: {
+        organizationId: orgId,
+        membershipId: preferring.membershipId,
+        weekday: 0,
+        slot: 'EVENING',
+        value: 'PREFERRED',
+      },
+    });
+    const map = await loader.load(ctx.prisma, org, evening, [
+      preferring.membershipId,
+      neutral.membershipId,
+    ]);
+    expect(map.get(preferring.membershipId)!.preference).toBe('PREFERRED');
+    expect(map.get(neutral.membershipId)!.preference).toBe('NEUTRAL');
+  });
+
   it('works inside an interactive transaction', async () => {
     const map = await ctx.prisma.$transaction((tx) =>
       loader.load(tx, org, target(), [owner.membershipId]),

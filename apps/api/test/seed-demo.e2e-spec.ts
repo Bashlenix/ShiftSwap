@@ -7,6 +7,7 @@ import type { OrgContext } from '../src/tenancy/org-context.decorator';
 import { createApp } from '../src/app.factory';
 import { createAuth } from '../src/auth/auth';
 import { PrismaService } from '../src/prisma/prisma.service';
+import type { OfferDetailDto } from '@shiftswap/shared';
 import { DEMO_PASSWORD } from '../src/seed/demo-data';
 import { seedDemo } from '../src/seed/seed-demo';
 
@@ -15,6 +16,7 @@ const COUNTS = {
   organizations: 2,
   memberships: 9,
   skills: 4,
+  preferences: 14,
   shifts: 10,
   offers: 2,
   acceptances: 2,
@@ -193,6 +195,30 @@ describe('seedDemo', () => {
         expect.objectContaining({ role: 'manager' }),
         expect.objectContaining({ role: 'manager' }),
       ]);
+    });
+
+    it('ranks the L5 give-away by seeded preferences: Lukas 40, Mia 0', async () => {
+      const login = await request(app.getHttpServer())
+        .post('/api/auth/sign-in/email')
+        .set('Origin', 'http://localhost:5173')
+        .set('X-Forwarded-For', '10.9.0.2')
+        .send({ email: 'tom@shiftswap.test', password: DEMO_PASSWORD })
+        .expect(200);
+      const cookie = (login.headers['set-cookie'] as unknown as string[])
+        .map((c) => c.split(';')[0])
+        .join('; ');
+      const org = await prisma.organization.findFirstOrThrow({ where: { name: 'Café Lindenhof' } });
+      const give = await prisma.offer.findFirstOrThrow({ where: { kind: 'GIVE_AWAY' } });
+      const res = await request(app.getHttpServer())
+        .get(`/api/v1/orgs/${org.id}/offers/${give.id}`)
+        .set('Origin', 'http://localhost:5173')
+        .set('Cookie', cookie)
+        .expect(200);
+      const detail = res.body as OfferDetailDto;
+      const pref = (name: string) =>
+        detail.acceptances.find((a) => a.displayName === name)!.score!.breakdown.preference;
+      expect(pref('Lukas Wolf')).toBe(40);
+      expect(pref('Mia Hoffmann')).toBe(0);
     });
 
     it('offers: give-away by Anna with Lukas first, open shift by Tom', async () => {

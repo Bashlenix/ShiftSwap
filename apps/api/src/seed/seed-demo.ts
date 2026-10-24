@@ -11,6 +11,7 @@ import {
   DEMO_ORGS,
   DEMO_PASSWORD,
   DEMO_PLACEHOLDERS,
+  DEMO_PREFERENCES,
   DEMO_SHIFTS,
   DEMO_SKILLS,
   demoShiftWindow,
@@ -45,6 +46,7 @@ export async function seedDemo(
   organizations: number;
   memberships: number;
   skills: number;
+  preferences: number;
   shifts: number;
   offers: number;
   acceptances: number;
@@ -108,6 +110,18 @@ export async function seedDemo(
       ms.skills.map((name) => ({
         membershipId: memberIds.get(`${ms.org}|${ms.member}`)!,
         skillId: skillIds.get(`${ms.org}|${name}`)!,
+      })),
+    ),
+  });
+
+  await prisma.preference.createMany({
+    data: DEMO_PREFERENCES.flatMap((p) =>
+      p.weekdays.map((weekday) => ({
+        organizationId: orgIds.get(p.org)!,
+        membershipId: memberIds.get(`${p.org}|${p.member}`)!,
+        weekday,
+        slot: p.slot,
+        value: p.value,
       })),
     ),
   });
@@ -231,6 +245,7 @@ export async function seedDemo(
     organizations,
     memberships,
     skills,
+    preferences,
     shifts,
     offers,
     acceptances,
@@ -241,6 +256,7 @@ export async function seedDemo(
     prisma.organization.count(),
     prisma.membership.count(),
     prisma.skill.count(),
+    prisma.preference.count(),
     prisma.shift.count(),
     prisma.offer.count(),
     prisma.acceptance.count(),
@@ -252,6 +268,7 @@ export async function seedDemo(
     organizations,
     memberships,
     skills,
+    preferences,
     shifts,
     offers,
     acceptances,

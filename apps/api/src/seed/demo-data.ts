@@ -1,4 +1,5 @@
 import { DateTime } from 'luxon';
+import type { PreferenceSlot, PreferenceValue } from '@shiftswap/shared';
 import type { AccessLevel } from '../generated/prisma/client';
 
 export const DEMO_PASSWORD = 'ShiftSwap-Demo-2026';
@@ -91,6 +92,30 @@ export const DEMO_MEMBER_SKILLS: { member: string; org: DemoOrgKey; skills: stri
   { member: 'mia@shiftswap.test', org: 'lindenhof', skills: ['Service'] },
   { member: 'Paul Weber', org: 'lindenhof', skills: ['Kitchen'] },
   { member: 'sara@shiftswap.test', org: 'seeblick', skills: ['Front desk'] },
+];
+
+/** Keyed by email; one row per weekday (0 = Monday). Only non-neutral values are stored. */
+export const DEMO_PREFERENCES: {
+  member: string;
+  org: DemoOrgKey;
+  slot: PreferenceSlot;
+  value: PreferenceValue;
+  weekdays: number[];
+}[] = [
+  {
+    member: 'lukas@shiftswap.test',
+    org: 'lindenhof',
+    slot: 'EVENING',
+    value: 'PREFERRED',
+    weekdays: [0, 1, 2, 3, 4, 5, 6],
+  },
+  {
+    member: 'mia@shiftswap.test',
+    org: 'lindenhof',
+    slot: 'EVENING',
+    value: 'AVOID',
+    weekdays: [0, 1, 2, 3, 4, 5, 6],
+  },
 ];
 
 export interface DemoShift {

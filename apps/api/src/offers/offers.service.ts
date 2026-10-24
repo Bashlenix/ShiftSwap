@@ -868,7 +868,7 @@ export class OffersService {
       const score: ScoreResult | null =
         entry && recheck.eligible && a.status === 'PENDING'
           ? scoreCandidate({
-              preference: 'NEUTRAL',
+              preference: entry.preference,
               weeklyMinutesAfter: entry.weeklyMinutes + shiftMin,
               weeklyLimitMin:
                 entry.ctx.candidate.weeklyLimitMin ?? org.policy.defaultWeeklyLimitMin,
