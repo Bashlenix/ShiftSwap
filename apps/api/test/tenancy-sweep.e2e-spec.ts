@@ -117,6 +117,14 @@ describe('tenancy and permission sweep', () => {
 
   const ROWS: Row[] = [
     {
+      route: 'GET orgs/:orgId',
+      actor: 'employee',
+      expected: 200,
+      managerOnly: false,
+      setup: async () => ({ params: base() }),
+      foreign: [],
+    },
+    {
       route: 'GET orgs/:orgId/members',
       actor: 'manager',
       expected: 200,
@@ -455,7 +463,8 @@ describe('tenancy and permission sweep', () => {
         all.add(`${names[method] ?? method} ${path}`);
       }
     }
-    const isPublic = (route: string) => /^[A-Z]+ (me|health)(\/|$)/.test(route);
+    // `POST orgs` (create an organisation) is session-only: there is no org yet to scope to.
+    const isPublic = (route: string) => /^([A-Z]+ (me|health)(\/|$)|POST orgs$)/.test(route);
     const protectedRoutes = [...all].filter((r) => !isPublic(r));
     // Any other route must live under orgs/:orgId, so a renamed param cannot escape the sweep.
     expect(protectedRoutes.filter((r) => !/^[A-Z]+ orgs\/:orgId(\/|$)/.test(r))).toEqual([]);

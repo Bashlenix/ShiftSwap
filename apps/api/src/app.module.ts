@@ -8,6 +8,7 @@ import { DirectoryModule } from './directory/directory.module';
 import { AvailabilityModule } from './availability/availability.module';
 import { ShiftsModule } from './shifts/shifts.module';
 import { OffersModule } from './offers/offers.module';
+import { OrgsModule } from './orgs/orgs.module';
 import { MeController } from './me/me.controller';
 import { HealthController } from './health/health.controller';
 import type { PrismaClient } from './generated/prisma/client';
@@ -46,6 +47,7 @@ export class AppModule {
         ShiftsModule,
         AvailabilityModule,
         OffersModule,
+        OrgsModule,
         // Offer expiry scheduler (SDD §25); tests drive OffersService.expireDue directly.
         ...(env.NODE_ENV === 'test' ? [] : [ScheduleModule.forRoot()]),
       ],
