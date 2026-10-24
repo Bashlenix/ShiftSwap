@@ -33,6 +33,21 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
 const headerLink =
   'inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-brand-strong underline-offset-4 hover:underline';
 
+/**
+ * Callback ref for the main nav: on phones the pills scroll sideways, so bring the current page's
+ * pill into view when the nav mounts (e.g. after a deep link to Settings). No-op when nothing
+ * overflows (the lg sidebar), so it never moves the page.
+ */
+function revealActivePill(nav: HTMLElement | null) {
+  if (!nav || nav.scrollWidth <= nav.clientWidth) return;
+  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+  nav.querySelector('[aria-current="page"]')?.scrollIntoView({
+    block: 'nearest',
+    inline: 'nearest',
+    behavior: reduced ? 'auto' : 'smooth',
+  });
+}
+
 interface NavItem {
   to: string;
   label: string;
@@ -154,6 +169,7 @@ export function OrgLayout() {
         </header>
         <div className="mx-auto max-w-7xl lg:flex lg:gap-8 lg:px-4">
           <nav
+            ref={revealActivePill}
             aria-label="Main"
             className="flex gap-1 overflow-x-auto border-b border-slate-200 bg-surface px-4 py-2 lg:sticky lg:top-16 lg:w-56 lg:shrink-0 lg:flex-col lg:self-start lg:overflow-visible lg:border-0 lg:bg-transparent lg:px-0 lg:py-4"
           >

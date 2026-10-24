@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrgLayout } from './OrgLayout';
 import { useOrg } from './useOrg';
 
@@ -160,5 +160,62 @@ describe('OrgLayout', () => {
       'href',
       '/orgs/o1/members',
     );
+  });
+
+  describe('mobile nav scroll', () => {
+    const scrollIntoView = vi.fn();
+    const restore: (() => void)[] = [];
+    /** jsdom has no layout: fake an overflowing nav and the reduced-motion query. */
+    function fakeLayout(reduced: boolean) {
+      const proto = HTMLElement.prototype;
+      const sw = Object.getOwnPropertyDescriptor(proto, 'scrollWidth');
+      const cw = Object.getOwnPropertyDescriptor(proto, 'clientWidth');
+      Object.defineProperty(proto, 'scrollWidth', { configurable: true, get: () => 800 });
+      Object.defineProperty(proto, 'clientWidth', { configurable: true, get: () => 390 });
+      const siv = Element.prototype.scrollIntoView;
+      Element.prototype.scrollIntoView = scrollIntoView;
+      const mm = window.matchMedia;
+      window.matchMedia = ((q: string) => ({
+        matches: reduced && q === '(prefers-reduced-motion: reduce)',
+        media: q,
+      })) as unknown as typeof window.matchMedia;
+      restore.push(() => {
+        if (sw) Object.defineProperty(proto, 'scrollWidth', sw);
+        if (cw) Object.defineProperty(proto, 'clientWidth', cw);
+        window.matchMedia = mm;
+        Element.prototype.scrollIntoView = siv;
+      });
+    }
+    afterEach(() => {
+      restore.splice(0).forEach((r) => r());
+      scrollIntoView.mockReset();
+    });
+
+    it('scrolls the active pill into view on mount', async () => {
+      fakeLayout(false);
+      apiFetch.mockResolvedValue(me);
+      renderAt('/orgs/o1/offers');
+      await screen.findByText('offers page');
+      const active = screen.getByRole('link', { current: 'page' });
+      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      expect(scrollIntoView.mock.contexts[0]).toBe(active);
+      expect(scrollIntoView).toHaveBeenCalledWith({
+        block: 'nearest',
+        inline: 'nearest',
+        behavior: 'smooth',
+      });
+    });
+
+    it('jumps without animation under reduced motion', async () => {
+      fakeLayout(true);
+      apiFetch.mockResolvedValue(me);
+      renderAt('/orgs/o1/offers');
+      await screen.findByText('offers page');
+      expect(scrollIntoView).toHaveBeenCalledWith({
+        block: 'nearest',
+        inline: 'nearest',
+        behavior: 'auto',
+      });
+    });
   });
 });
