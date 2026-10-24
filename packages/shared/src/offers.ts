@@ -4,7 +4,8 @@ import type { ShiftDto } from './shifts';
 
 export type OfferKind = 'GIVE_AWAY' | 'OPEN_SHIFT';
 export type OfferStatus = 'OPEN' | 'APPROVED' | 'REJECTED' | 'FILLED' | 'CANCELLED' | 'EXPIRED';
-export type AcceptanceStatus = 'PENDING' | 'SELECTED' | 'NOT_SELECTED' | 'WITHDRAWN' | 'INVALIDATED';
+export type AcceptanceStatus =
+  'PENDING' | 'SELECTED' | 'NOT_SELECTED' | 'WITHDRAWN' | 'INVALIDATED';
 export type AccessLevel = 'EMPLOYEE' | 'MANAGER' | 'ADMIN';
 
 export const createOfferSchema = z.object({

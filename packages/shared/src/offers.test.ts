@@ -21,9 +21,16 @@ describe('offer schemas', () => {
 
 describe('errors', () => {
   it('RULE_LABELS has exactly the 8 rule codes', () => {
-    expect(Object.keys(RULE_LABELS).sort()).toEqual(
-      ['DAILY_LIMIT', 'IS_OWNER', 'MIN_REST', 'MISSING_SKILL', 'NOT_ACTIVE', 'OVERLAP', 'UNAVAILABLE', 'WEEKLY_LIMIT'],
-    );
+    expect(Object.keys(RULE_LABELS).sort()).toEqual([
+      'DAILY_LIMIT',
+      'IS_OWNER',
+      'MIN_REST',
+      'MISSING_SKILL',
+      'NOT_ACTIVE',
+      'OVERLAP',
+      'UNAVAILABLE',
+      'WEEKLY_LIMIT',
+    ]);
   });
 
   it('ERROR_CODES includes UNAUTHENTICATED and INTERNAL', () => {
