@@ -1,4 +1,4 @@
-import type { INestApplication } from '@nestjs/common';
+import { Logger, type INestApplication } from '@nestjs/common';
 import {
   EMAIL_NOTIFICATION_TYPES,
   notificationText,
@@ -8,6 +8,7 @@ import {
 import { DateTime } from 'luxon';
 import { MailService } from '../src/mail/mail.service';
 import { AppOriginRegistry } from '../src/notifications/app-origin';
+import * as notificationMail from '../src/notifications/notification-mail';
 import { NotificationMailer } from '../src/notifications/notification-mailer';
 import request from 'supertest';
 import { createApp } from '../src/app.factory';
@@ -234,6 +235,37 @@ describe('notification emails (outbox dispatch, SDD §23)', () => {
     }
     expect(total).toBe(again);
     assertOnce(again);
+  });
+
+  it('a row that fails to build is logged (IDs only) and the rest of the batch is still sent', async () => {
+    await giveAway([e1]);
+    const rows = await pending();
+    expect(rows.length).toBeGreaterThan(1);
+    const bad = rows[0];
+    const real = notificationMail.buildNotificationMail;
+    const build = jest
+      .spyOn(notificationMail, 'buildNotificationMail')
+      .mockImplementation((args) => {
+        if (args.recipientMembershipId === bad.recipientMembershipId && args.type === bad.type) {
+          throw new Error(`malformed payload for ${args.to}`);
+        }
+        return real(args);
+      });
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    try {
+      const sent = await mailer.dispatchPending();
+      expect(sent).toBe(rows.length - 1);
+      expect(mail.sent).toHaveLength(rows.length - 1);
+      expect(warn).toHaveBeenCalledWith({
+        kind: bad.type,
+        recipientMembershipId: bad.recipientMembershipId,
+      });
+      expect(JSON.stringify(warn.mock.calls)).not.toContain('@');
+    } finally {
+      build.mockRestore();
+      warn.mockRestore();
+    }
+    expect(await pending()).toEqual([]);
   });
 
   it('rows written by expireDue are emailed', async () => {

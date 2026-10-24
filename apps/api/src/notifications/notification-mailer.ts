@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { NotificationPayload } from '@shiftswap/shared';
 import { MailService } from '../mail/mail.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,6 +12,8 @@ import { buildNotificationMail } from './notification-mail';
  */
 @Injectable()
 export class NotificationMailer {
+  private readonly logger = new Logger(NotificationMailer.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly mail: MailService,
@@ -40,19 +42,25 @@ export class NotificationMailer {
       const user = row.recipient.user;
       // Recipient gone since the row was written: skip; the row stays marked dispatched.
       if (row.recipient.status !== 'ACTIVE' || !user || user.deletedAt) continue;
-      await this.mail.send(
-        buildNotificationMail({
-          to: user.email,
-          orgName: row.organization.name,
-          timeZone: row.organization.timezone,
-          orgId: row.organizationId,
-          baseUrl,
-          type: row.type,
-          payload: row.payload as NotificationPayload,
-          recipientMembershipId: row.recipientMembershipId,
-        }),
-      );
-      sent++;
+      // One bad row (e.g. a malformed payload) must not cost the rest of the batch its emails.
+      try {
+        await this.mail.send(
+          buildNotificationMail({
+            to: user.email,
+            orgName: row.organization.name,
+            timeZone: row.organization.timezone,
+            orgId: row.organizationId,
+            baseUrl,
+            type: row.type,
+            payload: row.payload as NotificationPayload,
+            recipientMembershipId: row.recipientMembershipId,
+          }),
+        );
+        sent++;
+      } catch {
+        // IDs only: never the address or the error message (it may contain either).
+        this.logger.warn({ kind: row.type, recipientMembershipId: row.recipientMembershipId });
+      }
     }
     return sent;
   }
