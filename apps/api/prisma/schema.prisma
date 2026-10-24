@@ -25,9 +25,9 @@ model User {
   email         String       @unique
   emailVerified Boolean      @default(false) @map("email_verified")
   image         String?
-  createdAt     DateTime     @default(now()) @map("created_at")
-  updatedAt     DateTime     @updatedAt @map("updated_at")
-  deletedAt     DateTime?    @map("deleted_at")
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  deletedAt     DateTime?    @map("deleted_at") @db.Timestamptz(3)
   sessions      Session[]
   accounts      Account[]
   memberships   Membership[]
@@ -37,10 +37,10 @@ model User {
 
 model Session {
   id        String   @id
-  expiresAt DateTime @map("expires_at")
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
   token     String   @unique
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
   ipAddress String?  @map("ip_address")
   userAgent String?  @map("user_agent")
   userId    String   @map("user_id")
@@ -59,12 +59,12 @@ model Account {
   accessToken           String?   @map("access_token")
   refreshToken          String?   @map("refresh_token")
   idToken               String?   @map("id_token")
-  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
-  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at") @db.Timestamptz(3)
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at") @db.Timestamptz(3)
   scope                 String?
   password              String?
-  createdAt             DateTime  @default(now()) @map("created_at")
-  updatedAt             DateTime  @updatedAt @map("updated_at")
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@index([userId])
   @@map("accounts")
@@ -74,24 +74,30 @@ model Verification {
   id         String   @id
   identifier String
   value      String
-  expiresAt  DateTime @map("expires_at")
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@index([identifier])
   @@map("verifications")
 }
 
 model Organization {
-  id                    String       @id @default(uuid())
+  id                    String           @id @default(uuid())
   name                  String
-  timezone              String       @default("Europe/Berlin")
-  defaultWeeklyLimitMin Int          @default(2400) @map("default_weekly_limit_min")
-  minRestMin            Int          @default(660) @map("min_rest_min")
-  maxDailyMin           Int          @default(600) @map("max_daily_min")
-  offerLeadTimeMin      Int          @default(120) @map("offer_lead_time_min")
-  createdAt             DateTime     @default(now()) @map("created_at")
+  timezone              String           @default("Europe/Berlin")
+  defaultWeeklyLimitMin Int              @default(2400) @map("default_weekly_limit_min")
+  minRestMin            Int              @default(660) @map("min_rest_min")
+  maxDailyMin           Int              @default(600) @map("max_daily_min")
+  offerLeadTimeMin      Int              @default(120) @map("offer_lead_time_min")
+  createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
   memberships           Membership[]
+  skills                Skill[]
+  shifts                Shift[]
+  unavailabilities      Unavailability[]
+  offers                Offer[]
+  acceptances           Acceptance[]
+  auditLogs             AuditLog[]
 
   @@map("organizations")
 }
@@ -109,10 +115,180 @@ model Membership {
   weeklyLimitMin Int?             @map("weekly_limit_min")
   externalId     String?          @map("external_id")
   source         String           @default("MANUAL")
-  createdAt      DateTime         @default(now()) @map("created_at")
-  updatedAt      DateTime         @updatedAt @map("updated_at")
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  skills              MembershipSkill[]
+  assignedShifts      Shift[]           @relation("ShiftAssignee")
+  unavailabilities    Unavailability[]
+  originalOwnerOffers Offer[]           @relation("OfferOriginalOwner")
+  createdOffers       Offer[]           @relation("OfferCreator")
+  resolvedOffers      Offer[]           @relation("OfferResolver")
+  acceptances         Acceptance[]
+  auditLogs           AuditLog[]
 
   @@unique([organizationId, userId])
   @@unique([organizationId, externalId])
   @@map("memberships")
+}
+
+enum OfferKind {
+  GIVE_AWAY
+  OPEN_SHIFT
+}
+
+enum OfferStatus {
+  OPEN
+  APPROVED
+  REJECTED
+  FILLED
+  CANCELLED
+  EXPIRED
+}
+
+enum AcceptanceStatus {
+  PENDING
+  SELECTED
+  NOT_SELECTED
+  WITHDRAWN
+  INVALIDATED
+}
+
+model Skill {
+  id             String            @id @default(uuid())
+  organizationId String            @map("organization_id")
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  name           String
+  members        MembershipSkill[]
+  shifts         ShiftSkill[]
+
+  @@unique([organizationId, name])
+  @@map("skills")
+}
+
+model MembershipSkill {
+  membershipId String     @map("membership_id")
+  membership   Membership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  skillId      String     @map("skill_id")
+  skill        Skill      @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([membershipId, skillId])
+  @@map("membership_skills")
+}
+
+// SQL-only constraint (not expressible in Prisma): CHECK shifts_end_after_start (end_at > start_at).
+// Lives in migration *_shifts_offers; future migrations must not drop it.
+model Shift {
+  id                   String       @id @default(uuid())
+  organizationId       String       @map("organization_id")
+  organization         Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  startAt              DateTime     @map("start_at") @db.Timestamptz(3)
+  endAt                DateTime     @map("end_at") @db.Timestamptz(3)
+  assignedMembershipId String?      @map("assigned_membership_id")
+  assignedMembership   Membership?  @relation("ShiftAssignee", fields: [assignedMembershipId], references: [id], onDelete: Restrict)
+  location             String?
+  notes                String?
+  externalId           String?      @map("external_id")
+  source               String       @default("MANUAL")
+  version              Int          @default(1)
+  deletedAt            DateTime?    @map("deleted_at") @db.Timestamptz(3)
+  createdAt            DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  skills               ShiftSkill[]
+  offers               Offer[]
+
+  @@unique([organizationId, externalId])
+  @@index([organizationId, startAt])
+  @@index([assignedMembershipId, startAt])
+  @@map("shifts")
+}
+
+model ShiftSkill {
+  shiftId String @map("shift_id")
+  shift   Shift  @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+  skillId String @map("skill_id")
+  skill   Skill  @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([shiftId, skillId])
+  @@map("shift_skills")
+}
+
+// SQL-only constraint (not expressible in Prisma): CHECK unavailabilities_end_after_start (end_at > start_at).
+// Lives in migration *_shifts_offers; future migrations must not drop it.
+model Unavailability {
+  id             String       @id @default(uuid())
+  organizationId String       @map("organization_id")
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  membershipId   String       @map("membership_id")
+  membership     Membership   @relation(fields: [membershipId], references: [id], onDelete: Restrict)
+  startAt        DateTime     @map("start_at") @db.Timestamptz(3)
+  endAt          DateTime     @map("end_at") @db.Timestamptz(3)
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([membershipId, startAt])
+  @@map("unavailabilities")
+}
+
+// SQL-only constraint (not expressible in Prisma): partial unique index offers_one_open_per_shift ON offers (shift_id) WHERE status = 'OPEN'.
+// Lives in migration *_shifts_offers; future migrations must not drop it.
+model Offer {
+  id                        String       @id @default(uuid())
+  organizationId            String       @map("organization_id")
+  organization              Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  shiftId                   String       @map("shift_id")
+  shift                     Shift        @relation(fields: [shiftId], references: [id], onDelete: Restrict)
+  kind                      OfferKind
+  status                    OfferStatus  @default(OPEN)
+  originalOwnerMembershipId String?      @map("original_owner_membership_id")
+  originalOwner             Membership?  @relation("OfferOriginalOwner", fields: [originalOwnerMembershipId], references: [id], onDelete: Restrict)
+  createdByMembershipId     String       @map("created_by_membership_id")
+  createdBy                 Membership   @relation("OfferCreator", fields: [createdByMembershipId], references: [id], onDelete: Restrict)
+  expiresAt                 DateTime     @map("expires_at") @db.Timestamptz(3)
+  selectedAcceptanceId      String?      @map("selected_acceptance_id")
+  resolvedByMembershipId    String?      @map("resolved_by_membership_id")
+  resolvedBy                Membership?  @relation("OfferResolver", fields: [resolvedByMembershipId], references: [id], onDelete: Restrict)
+  resolvedAt                DateTime?    @map("resolved_at") @db.Timestamptz(3)
+  cancelReason              String?      @map("cancel_reason")
+  version                   Int          @default(1)
+  createdAt                 DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt                 DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  acceptances               Acceptance[]
+
+  @@index([organizationId, status])
+  @@map("offers")
+}
+
+model Acceptance {
+  id                String           @id @default(uuid())
+  organizationId    String           @map("organization_id")
+  organization      Organization     @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  offerId           String           @map("offer_id")
+  offer             Offer            @relation(fields: [offerId], references: [id], onDelete: Restrict)
+  membershipId      String           @map("membership_id")
+  membership        Membership       @relation(fields: [membershipId], references: [id], onDelete: Restrict)
+  status            AcceptanceStatus
+  invalidatedReason Json?            @map("invalidated_reason")
+  createdAt         DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime         @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([offerId, membershipId])
+  @@map("acceptances")
+}
+
+model AuditLog {
+  id                BigInt       @id @default(autoincrement())
+  organizationId    String       @map("organization_id")
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actorMembershipId String?      @map("actor_membership_id")
+  actor             Membership?  @relation(fields: [actorMembershipId], references: [id], onDelete: Restrict)
+  action            String
+  entityType        String       @map("entity_type")
+  entityId          String       @map("entity_id")
+  before            Json?
+  after             Json?
+  metadata          Json?
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([organizationId, createdAt])
+  @@map("audit_logs")
 }

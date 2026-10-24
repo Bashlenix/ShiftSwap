@@ -6,6 +6,7 @@ import { Logger } from 'nestjs-pino';
 import { AUTH, type Auth } from './auth/auth';
 import { clientForwardedProto } from './auth/forwarded-proto';
 import { isTrustedOrigin } from './config/auth-config';
+import { ErrorFilter } from './common/error.filter';
 import { AppModule } from './app.module';
 import type { PrismaClient } from './generated/prisma/client';
 
@@ -25,6 +26,7 @@ export async function createApp(options: CreateAppOptions = {}): Promise<INestAp
     bufferLogs: true,
   });
   app.useLogger(app.get(Logger));
+  app.useGlobalFilters(new ErrorFilter());
   app.setGlobalPrefix('api/v1', { exclude: ['health/live', 'health/ready'] });
   // Better Auth reads the raw body itself, so it must come before the JSON parser.
   const expressApp = app.getHttpAdapter().getInstance() as Express;

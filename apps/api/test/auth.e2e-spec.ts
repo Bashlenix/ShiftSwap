@@ -98,8 +98,22 @@ describe('auth + /me', () => {
       .set('Cookie', cookie)
       .expect(200);
     expect(res.body.memberships).toEqual([
-      { organizationId: a.id, organizationName: 'Alpha Cafe', accessLevel: 'MANAGER' },
-      { organizationId: b.id, organizationName: 'Zeta Bakery', accessLevel: 'ADMIN' },
+      {
+        membershipId: expect.any(String),
+        organizationId: a.id,
+        organizationName: 'Alpha Cafe',
+        organizationTimezone: 'Europe/Berlin',
+        offerLeadTimeMin: 120,
+        accessLevel: 'MANAGER',
+      },
+      {
+        membershipId: expect.any(String),
+        organizationId: b.id,
+        organizationName: 'Zeta Bakery',
+        organizationTimezone: 'Europe/Berlin',
+        offerLeadTimeMin: 120,
+        accessLevel: 'ADMIN',
+      },
     ]);
   });
 

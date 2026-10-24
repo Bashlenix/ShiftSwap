@@ -6,6 +6,9 @@ import { PrismaService } from '../prisma/prisma.service';
 export interface MeResponse {
   user: AuthUser;
   memberships: {
+    membershipId: string;
+    organizationTimezone: string;
+    offerLeadTimeMin: number;
     organizationId: string;
     organizationName: string;
     accessLevel: 'EMPLOYEE' | 'MANAGER' | 'ADMIN';
@@ -27,6 +30,9 @@ export class MeController {
     return {
       user,
       memberships: rows.map((m) => ({
+        membershipId: m.id,
+        organizationTimezone: m.organization.timezone,
+        offerLeadTimeMin: m.organization.offerLeadTimeMin,
         organizationId: m.organizationId,
         organizationName: m.organization.name,
         accessLevel: m.accessLevel,
