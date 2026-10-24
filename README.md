@@ -37,6 +37,9 @@ Seeded shifts are relative to today (Europe/Berlin) and reset on every API start
 4. Log in as Maria (admin) → Members → Add person with a fresh email → open the demo inbox (`/mailpit/`) → open the invite link → Create account → you land in Café Lindenhof as the new member. Seeded extra: Jonas Braun (`jonas@shiftswap.test`) already has a pending invite (the seed sends no email; use Resend invite on Members to get the mail).
 5. Log in as Tom → the nav shows Notifications (2 unread acceptances on Anna's give-away) → Mark all as read.
 6. Log in as Maria → Members → Deactivate Mia → her future shifts show as open shifts in Schedule.
+7. Log in as Anna → Availability → Weekly preferences: set a time to Preferred or Avoid. Preferences only affect ranking; they never block a shift. Lukas and Mia have seeded preferences that change the ranking Tom sees in step 1 (Lukas +40, Mia +0).
+8. Swap events send email: after Tom approves Lukas in step 1, Lukas gets an email in the demo inbox (`/mailpit/`).
+9. Log in as any demo account → Account → Delete account. Deleting a demo account lasts only until the Codespace restarts, because the demo data is re-seeded on every API start.
 
 Demo inbox: open `/mailpit/` on the app address (the same address as the app, for example `<app address>/mailpit/`).
 

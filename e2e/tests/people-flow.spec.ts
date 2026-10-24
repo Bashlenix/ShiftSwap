@@ -78,6 +78,17 @@ test('Maria invites a new person who creates an account and joins', async ({ pag
   await expect(row.getByText(/^\W*Active$/)).toBeVisible();
 });
 
+test('Maria searches the members for "jonas"', async ({ page }) => {
+  await logInToLindenhof(page, 'maria@shiftswap.test');
+  await openPage(page, 'Members', 'Members');
+  await page.getByRole('searchbox', { name: 'Search members' }).fill('jonas');
+  await expect(
+    page.getByRole('status').filter({ hasText: /^Showing 1 of \d+ members$/ }),
+  ).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: 'Jonas Braun' })).toHaveCount(1);
+  await expect(page.getByRole('row').filter({ hasText: 'Anna Schmidt' })).toHaveCount(0);
+});
+
 test('Tom reads and clears his notifications', async ({ page }) => {
   await logInToLindenhof(page, 'tom@shiftswap.test');
   const nav = page.getByRole('navigation', { name: 'Main' });
