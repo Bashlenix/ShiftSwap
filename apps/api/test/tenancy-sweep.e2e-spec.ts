@@ -561,7 +561,11 @@ describe('tenancy and permission sweep', () => {
       }
     }
     // `POST orgs` (create an organisation) is session-only: there is no org yet to scope to.
-    const isPublic = (route: string) => /^([A-Z]+ (me|health)(\/|$)|POST orgs$)/.test(route);
+    // `invites/:token` routes are keyed by an unguessable token, not an org: exact routes only.
+    const isPublic = (route: string) =>
+      /^([A-Z]+ (me|health)(\/|$)|POST orgs$|GET invites\/:token$|POST invites\/:token\/accept$)/.test(
+        route,
+      );
     const protectedRoutes = [...all].filter((r) => !isPublic(r));
     // Any other route must live under orgs/:orgId, so a renamed param cannot escape the sweep.
     expect(protectedRoutes.filter((r) => !/^[A-Z]+ orgs\/:orgId(\/|$)/.test(r))).toEqual([]);
