@@ -67,3 +67,14 @@ export function localToInstant(local: string, timeZone: string): string {
   guess = wall - zoneOffsetMs(guess, timeZone);
   return new Date(guess).toISOString();
 }
+
+/** e.g. `Sat 24 Oct, 14:05` in `timezone`. */
+export function formatDateTime(instant: string, timezone: string): string {
+  const date = new Date(instant);
+  const p = Object.fromEntries(
+    dayFormat(timezone)
+      .formatToParts(date)
+      .map((x) => [x.type, x.value]),
+  );
+  return `${p.weekday} ${p.day} ${p.month}, ${timeFormat(timezone).format(date)}`;
+}

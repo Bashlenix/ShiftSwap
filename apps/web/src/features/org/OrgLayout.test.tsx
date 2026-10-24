@@ -45,16 +45,18 @@ function renderAt(path: string) {
     ],
     { initialEntries: [path] },
   );
-  render(
+  const view = render(
     <QueryClientProvider client={client}>
       <RouterProvider router={router} />
     </QueryClientProvider>,
   );
-  return router;
+  return Object.assign(router, { unmount: view.unmount });
 }
 
 describe('OrgLayout', () => {
-  beforeEach(() => apiFetch.mockReset());
+  beforeEach(() => {
+    apiFetch.mockReset();
+  });
 
   it('shows Organisation not found for an org the user is not a member of', async () => {
     apiFetch.mockResolvedValue(me);
@@ -85,6 +87,50 @@ describe('OrgLayout', () => {
       '/orgs',
     );
     expect(screen.getByRole('button', { name: 'Log out' })).toBeVisible();
+  });
+
+  it('shows the unread count in the Notifications link', async () => {
+    apiFetch.mockImplementation((path: string) =>
+      Promise.resolve(path.endsWith('/unread-count') ? { count: 3 } : me),
+    );
+    renderAt('/orgs/o1/me/shifts');
+    expect(await screen.findByRole('link', { name: 'Notifications (3)' })).toHaveAttribute(
+      'href',
+      '/orgs/o1/notifications',
+    );
+  });
+
+  it('shows plain Notifications when nothing is unread', async () => {
+    apiFetch.mockImplementation((path: string) =>
+      Promise.resolve(path.endsWith('/unread-count') ? { count: 0 } : me),
+    );
+    renderAt('/orgs/o1/me/shifts');
+    expect(await screen.findByRole('link', { name: 'Notifications' })).toBeVisible();
+  });
+
+  it('shows Audit to managers and Settings only to admins', async () => {
+    const as = (accessLevel: string) =>
+      apiFetch.mockImplementation((path: string) =>
+        Promise.resolve(
+          path.endsWith('/unread-count')
+            ? { count: 0 }
+            : { ...me, memberships: [{ ...me.memberships[0], accessLevel }] },
+        ),
+      );
+    as('MANAGER');
+    const { unmount } = renderAt('/orgs/o1/me/shifts');
+    expect(await screen.findByRole('link', { name: 'Audit' })).toHaveAttribute(
+      'href',
+      '/orgs/o1/audit',
+    );
+    expect(screen.queryByRole('link', { name: 'Settings' })).toBeNull();
+    unmount();
+    as('ADMIN');
+    renderAt('/orgs/o1/me/shifts');
+    expect(await screen.findByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'href',
+      '/orgs/o1/settings',
+    );
   });
 
   it('hides the manager links from employees and shows them to managers', async () => {

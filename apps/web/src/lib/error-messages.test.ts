@@ -50,6 +50,13 @@ describe('errorMessage', () => {
     expect(errorMessage(err)).toBe('A shift can be at most 16 hours');
   });
 
+  it('adds the shift count to SKILL_IN_USE when the server gives one', () => {
+    const body = (shiftCount: number) =>
+      new ApiError(409, { error: { code: 'SKILL_IN_USE', message: 'x', details: { shiftCount } } });
+    expect(errorMessage(body(1))).toBe('This skill is still required by 1 upcoming shift.');
+    expect(errorMessage(body(3))).toBe('This skill is still required by 3 upcoming shifts.');
+  });
+
   it('falls back to a form hint for VALIDATION_FAILED without issues', () => {
     const err = new ApiError(400, { error: { code: 'VALIDATION_FAILED', message: 'x' } });
     expect(errorMessage(err)).toBe('Please check the form.');

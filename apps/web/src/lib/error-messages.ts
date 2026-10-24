@@ -51,8 +51,11 @@ export function errorMessage(
       return err.serverMessage || 'This email already belongs to a member.';
     case 'INVITE_INVALID':
       return 'This invite is no longer valid.';
-    case 'SKILL_IN_USE':
-      return 'This skill is still required by upcoming shifts.';
+    case 'SKILL_IN_USE': {
+      const n = err.details?.shiftCount;
+      if (typeof n !== 'number') return 'This skill is still required by upcoming shifts.';
+      return `This skill is still required by ${n} upcoming ${n === 1 ? 'shift' : 'shifts'}.`;
+    }
     case 'EMAIL_MISMATCH':
       return 'This invite is for a different email address.';
     case 'RATE_LIMITED':
