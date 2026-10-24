@@ -450,6 +450,21 @@ describe('in-app notifications', () => {
       expect((await api(app, reader.cookie).get(nUrl('?cursor=garbage'))).status).toBe(400);
     });
 
+    it('rejects non-digit limits and repeated params with 400 VALIDATION_FAILED, never 500', async () => {
+      const p1 = await api(app, reader.cookie).get(nUrl('?limit=2'));
+      const cursor = encodeURIComponent(p1.body.nextCursor);
+      for (const q of [
+        '?limit=1e1',
+        '?limit=2.0',
+        '?limit=1&limit=2',
+        `?cursor=${cursor}&cursor=${cursor}`,
+      ]) {
+        const res = await api(app, reader.cookie).get(nUrl(q));
+        expect([q, res.status]).toEqual([q, 400]);
+        expect(res.body.error.code).toBe('VALIDATION_FAILED');
+      }
+    });
+
     it('unread-count, read selected ids (scoped), then read all', async () => {
       const count = async () =>
         (await api(app, reader.cookie).get(nUrl('/unread-count'))).body.count as number;

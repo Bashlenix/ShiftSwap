@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from '@nestjs/common';
 import { SessionGuard } from '../auth/session.guard';
-import { DomainError } from '../common/domain-error';
+import { parseLimit, singleQueryParam } from '../common/query-params';
 import { ZodBody } from '../common/zod-body.pipe';
 import { MinAccess } from '../tenancy/min-access.decorator';
 import { Org, type OrgContext } from '../tenancy/org-context.decorator';
@@ -28,19 +28,7 @@ const readSchema = {
     return { success: true as const, data: { ids: ids as string[] } };
   },
 };
-const DEFAULT_LIMIT = 20;
-const MAX_LIMIT = 50;
-
-function parseLimit(raw?: string): number {
-  if (raw === undefined) return DEFAULT_LIMIT;
-  const n = Number(raw);
-  if (!Number.isInteger(n) || n < 1 || n > MAX_LIMIT) {
-    throw new DomainError('VALIDATION_FAILED', 'Request validation failed', {
-      issues: [{ path: 'limit', message: `Must be an integer from 1 to ${MAX_LIMIT}` }],
-    });
-  }
-  return n;
-}
+const LIMIT = { defaultLimit: 20, max: 50 };
 
 @Controller('orgs/:orgId/notifications')
 @UseGuards(SessionGuard, OrgGuard)
@@ -51,10 +39,15 @@ export class NotificationsController {
   @Get()
   list(
     @Org() org: OrgContext,
-    @Query('cursor') cursor?: string,
-    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: unknown,
+    @Query('limit') limit?: unknown,
   ): Promise<NotificationPage> {
-    return this.notifications.list(org.orgId, org.membershipId, parseLimit(limit), cursor);
+    return this.notifications.list(
+      org.orgId,
+      org.membershipId,
+      parseLimit(limit, LIMIT),
+      singleQueryParam(cursor, 'cursor'),
+    );
   }
 
   @Get('unread-count')

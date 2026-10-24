@@ -77,6 +77,13 @@ describe('GET orgs/:orgId/audit', () => {
       '?cursor=-5',
       '?cursor=1.5',
       `?entityId=${'x'.repeat(101)}`,
+      '?limit=1e1',
+      '?limit= 5',
+      // Repeated params arrive as arrays: 400, never a 500.
+      '?limit=1&limit=2',
+      '?entityType=offer&entityType=shift',
+      '?entityId=a&entityId=b',
+      '?cursor=5&cursor=6',
     ]) {
       const res = await api(app, mgr.cookie).get(url(q));
       expect([q, res.status]).toEqual([q, 400]);

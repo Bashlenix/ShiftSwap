@@ -2,6 +2,7 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import type { AuditEntryDto } from '@shiftswap/shared';
 import { SessionGuard } from '../auth/session.guard';
 import { DomainError } from '../common/domain-error';
+import { parseLimit, singleQueryParam } from '../common/query-params';
 import { Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MinAccess } from '../tenancy/min-access.decorator';
@@ -9,8 +10,7 @@ import { Org, type OrgContext } from '../tenancy/org-context.decorator';
 import { OrgGuard } from '../tenancy/org.guard';
 import { AUDIT_ENTITY_TYPES, type AuditEntityType } from './audit.service';
 
-const DEFAULT_LIMIT = 50;
-const MAX_LIMIT = 100;
+const LIMIT = { defaultLimit: 50, max: 100 };
 const MAX_ENTITY_ID = 100;
 
 export interface AuditPage {
@@ -22,15 +22,6 @@ const invalid = (path: string, message: string) =>
   new DomainError('VALIDATION_FAILED', 'Request validation failed', {
     issues: [{ path, message }],
   });
-
-function parseLimit(raw?: string): number {
-  if (raw === undefined) return DEFAULT_LIMIT;
-  const n = Number(raw);
-  if (!/^\d+$/.test(raw) || n < 1 || n > MAX_LIMIT) {
-    throw invalid('limit', `Must be an integer from 1 to ${MAX_LIMIT}`);
-  }
-  return n;
-}
 
 /** The id is strictly ordered, so the cursor is simply the last id seen (a positive integer). */
 function parseCursor(raw?: string): bigint | null {
@@ -50,18 +41,21 @@ export class AuditController {
   @Get()
   async list(
     @Org() org: OrgContext,
-    @Query('entityType') entityType?: string,
-    @Query('entityId') entityId?: string,
-    @Query('cursor') cursor?: string,
-    @Query('limit') limitRaw?: string,
+    @Query('entityType') entityTypeRaw?: unknown,
+    @Query('entityId') entityIdRaw?: unknown,
+    @Query('cursor') cursorRaw?: unknown,
+    @Query('limit') limitRaw?: unknown,
   ): Promise<AuditPage> {
+    const entityType = singleQueryParam(entityTypeRaw, 'entityType');
+    const entityId = singleQueryParam(entityIdRaw, 'entityId');
+    const cursor = singleQueryParam(cursorRaw, 'cursor');
     if (entityType !== undefined && !AUDIT_ENTITY_TYPES.includes(entityType as AuditEntityType)) {
       throw invalid('entityType', `Must be one of: ${AUDIT_ENTITY_TYPES.join(', ')}`);
     }
     if (entityId !== undefined && (entityId.length < 1 || entityId.length > MAX_ENTITY_ID)) {
       throw invalid('entityId', `Must be 1 to ${MAX_ENTITY_ID} characters`);
     }
-    const limit = parseLimit(limitRaw);
+    const limit = parseLimit(limitRaw, LIMIT);
     const before = parseCursor(cursor);
 
     const where: Prisma.AuditLogWhereInput = {
