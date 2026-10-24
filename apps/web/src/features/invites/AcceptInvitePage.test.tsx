@@ -252,6 +252,17 @@ describe('AcceptInvitePage', () => {
     );
   });
 
+  it('a log out answered with { error } shows the generic message and keeps the session', async () => {
+    useSession.mockReturnValue(signedInAs('anna@shiftswap.test'));
+    apiFetch.mockResolvedValue(preview());
+    signOut.mockResolvedValue({ data: null, error: { status: 500, statusText: 'Error' } });
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: 'Log out' }));
+    expect(await screen.findAllByText('Something went wrong. Please try again.')).not.toHaveLength(
+      0,
+    );
+  });
+
   it('a failing log out shows the generic message', async () => {
     useSession.mockReturnValue(signedInAs('anna@shiftswap.test'));
     apiFetch.mockResolvedValue(preview());

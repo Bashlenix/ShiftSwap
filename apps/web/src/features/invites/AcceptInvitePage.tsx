@@ -10,9 +10,9 @@ import { Label } from '../../components/ui/label';
 import { ApiError, apiFetch, apiSend } from '../../lib/api';
 import { authClient } from '../../lib/auth-client';
 import { errorMessage } from '../../lib/error-messages';
+import { PASSWORD_ERROR, PASSWORD_HINT } from '../../lib/password-copy';
 import { withNext } from '../../lib/safe-next';
 import { isAlreadyRegistered } from '../../lib/sign-up-error';
-import { PASSWORD_ERROR, PASSWORD_HINT } from '../../lib/password-copy';
 
 const GENERIC_FAILURE = 'Something went wrong. Please try again.';
 const STATE_COPY: Record<string, string> = {
@@ -165,7 +165,9 @@ function ValidInvite({ invite, token }: { invite: InvitePreviewDto; token: strin
 
   async function logOut() {
     try {
-      await authClient.signOut();
+      // Better Auth answers HTTP errors with `{ error }` instead of throwing.
+      const { error: signOutError } = await authClient.signOut();
+      if (signOutError) throw signOutError;
       setServerMismatch(false);
       queryClient.removeQueries({ queryKey: ['me'] });
     } catch {

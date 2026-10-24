@@ -24,6 +24,8 @@ export function SignUpPage() {
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Synchronous re-entry guard: two submits in one render would both still see busy=false.
+  const inFlight = useRef(false);
   const [exists, setExists] = useState(false);
   const refs = {
     name: useRef<HTMLInputElement>(null),
@@ -33,7 +35,7 @@ export function SignUpPage() {
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (busy) return;
+    if (inFlight.current) return;
     const form = new FormData(e.currentTarget);
     const name = String(form.get('name') ?? '').trim();
     const email = String(form.get('email') ?? '')
@@ -52,6 +54,7 @@ export function SignUpPage() {
       refs[first].current?.focus();
       return;
     }
+    inFlight.current = true;
     setBusy(true);
     try {
       const { error } = await authClient.signUp.email({ email, password, name });
@@ -67,6 +70,7 @@ export function SignUpPage() {
     } catch {
       setFormError(GENERIC_FAILURE);
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }

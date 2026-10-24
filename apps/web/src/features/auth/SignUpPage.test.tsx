@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -49,6 +49,24 @@ describe('SignUpPage', () => {
       password: 'longenough1',
       name: 'Anna Schmidt',
     });
+  });
+
+  it('a double submit sends one sign-up request', async () => {
+    let finish: (v: unknown) => void = () => {};
+    signUpEmail.mockReturnValue(new Promise((r) => (finish = r)));
+    const router = renderPage();
+    await userEvent.type(screen.getByLabelText('Name'), 'Anna Schmidt');
+    await userEvent.type(screen.getByLabelText('Email'), 'anna@shiftswap.test');
+    await userEvent.type(screen.getByLabelText('Password'), 'longenough1');
+    const form = screen.getByRole('button', { name: 'Create account' }).closest('form')!;
+    // Two submits in one batch: React has not re-rendered the disabled button in between.
+    act(() => {
+      form.requestSubmit();
+      form.requestSubmit();
+    });
+    expect(signUpEmail).toHaveBeenCalledTimes(1);
+    finish({ data: {} });
+    await waitFor(() => expect(router.state.location.pathname).toBe('/orgs'));
   });
 
   it('honours a same-origin next path', async () => {
