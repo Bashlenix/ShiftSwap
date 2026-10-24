@@ -1,6 +1,8 @@
 import type { INestApplication } from '@nestjs/common';
 import { AccountModule } from '../src/account/account.module';
 import { InvitesService } from '../src/invites/invites.service';
+import { MailService } from '../src/mail/mail.service';
+import { NotificationMailer } from '../src/notifications/notification-mailer';
 import { DeactivationService } from '../src/members/deactivation.service';
 import { api, createTestApp, makeMember, makeOrg, type TestCtx } from './helpers/test-app';
 
@@ -55,9 +57,9 @@ describe('DELETE /api/v1/me (account deletion, FR-23, SDD §27/§35)', () => {
   it('anonymises the user, deactivates every membership and signs the user out', async () => {
     const { orgId: orgA } = await makeOrg(ctx.prisma, { offerLeadTimeMin: LEAD_MIN });
     const { orgId: orgB } = await makeOrg(ctx.prisma, { offerLeadTimeMin: LEAD_MIN });
-    await makeMember(ctx, orgA, { accessLevel: 'ADMIN', name: 'Ada' });
-    await makeMember(ctx, orgB, { accessLevel: 'ADMIN', name: 'Bea' });
-    const lukas = await makeMember(ctx, orgA, { accessLevel: 'EMPLOYEE', name: 'Lukas' });
+    const ada = await makeMember(ctx, orgA, { accessLevel: 'ADMIN', name: 'Ada' });
+    const bea = await makeMember(ctx, orgB, { accessLevel: 'ADMIN', name: 'Bea' });
+    const lukas = await makeMember(ctx, orgA, { accessLevel: 'EMPLOYEE', name: 'Lukas Deletable' });
     const jonas = await makeMember(ctx, orgA, { accessLevel: 'EMPLOYEE', name: 'Jonas' });
     const lukasB = await joinOrg(orgB, lukas);
     const userId = lukas.userId!;
@@ -89,6 +91,14 @@ describe('DELETE /api/v1/me (account deletion, FR-23, SDD §27/§35)', () => {
       select: { id: true },
     });
     expect(auditBefore.length).toBeGreaterThan(0);
+    const oldEmail = (await ctx.prisma.user.findUniqueOrThrow({ where: { id: userId } })).email;
+    const mailer = app.get(NotificationMailer);
+    const mail = app.get(MailService);
+    const undispatched = () =>
+      ctx.prisma.notification.count({ where: { emailDispatchedAt: null } });
+    while ((await undispatched()) > 0) await mailer.dispatchPending(1000);
+    mail.sent.length = 0;
+    const t0 = new Date();
 
     const res = await deleteMe(lukas.cookie);
     expect(res.status).toBe(204);
@@ -133,6 +143,45 @@ describe('DELETE /api/v1/me (account deletion, FR-23, SDD §27/§35)', () => {
       expect(a).toMatchObject({ entityType: 'membership', actorMembershipId: a.entityId });
       expect(a.before).toBeNull();
       expect(a.after).toBeNull();
+    }
+
+    // The give-away shift was reposted as an open shift too.
+    expect(
+      await ctx.prisma.offer.count({
+        where: { shiftId: gaShift, kind: 'OPEN_SHIFT', status: 'OPEN' },
+      }),
+    ).toBe(1);
+
+    const rows = await ctx.prisma.notification.findMany({
+      where: { organizationId: { in: [orgA, orgB] }, createdAt: { gte: t0 } },
+    });
+    const of = (type: string) => rows.filter((r) => r.type === type);
+    const role = (r: (typeof rows)[number]) => (r.payload as { role?: string }).role;
+    // The pending candidate learns the give-away is gone.
+    expect(of('ACCEPTANCE_INVALIDATED').map((r) => r.recipientMembershipId)).toEqual([
+      jonas.membershipId,
+    ]);
+    // Both reposts reach the eligible members (Jonas), never the deleted user.
+    const eligible = of('OFFER_CREATED').filter((r) => role(r) === 'eligible');
+    expect(eligible.filter((r) => r.recipientMembershipId === jonas.membershipId)).toHaveLength(2);
+    // MEMBER_DEACTIVATED: managers only (Ada in org A, Bea in org B), in-app only.
+    const deact = of('MEMBER_DEACTIVATED');
+    expect(deact.map((r) => r.recipientMembershipId).sort()).toEqual(
+      [ada.membershipId, bea.membershipId].sort(),
+    );
+    expect(deact.every((r) => r.emailDispatchedAt !== null)).toBe(true);
+    const lukasIds = memberships.map((m) => m.id);
+    expect(rows.filter((r) => lukasIds.includes(r.recipientMembershipId))).toEqual([]);
+
+    // Dispatch: nothing to the deleted user, and no email mentions the old name or address.
+    expect(await mailer.dispatchPending(1000)).toBeGreaterThan(0);
+    expect(mail.sent.length).toBeGreaterThan(0);
+    for (const m of mail.sent) {
+      expect([oldEmail, user.email]).not.toContain(m.to);
+      for (const part of [m.subject, m.text, m.html]) {
+        expect(part).not.toContain('Lukas Deletable');
+        expect(part).not.toContain(oldEmail);
+      }
     }
   });
 
