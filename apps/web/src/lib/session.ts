@@ -2,6 +2,9 @@ import { authClient } from './auth-client';
 
 type SessionState = ReturnType<typeof authClient.useSession>;
 
+/** Upper bound for waiting on a newer session fetch. */
+const REFRESH_WAIT_MS = 3000;
+
 /**
  * Resolves once the session store holds the server's current session.
  *
@@ -17,11 +20,21 @@ export async function refreshSession(): Promise<void> {
   await store.get().refetch();
   // The sign-in signal can start a newer fetch that cancels ours; wait for that one too.
   if (!store.get().isRefetching) return;
-  await new Promise<void>((resolve) => {
-    const unbind = store.listen((value) => {
-      if (value.isRefetching) return;
-      unbind();
-      resolve();
-    });
-  });
+  // Bounded: this relies on library internals, and a change there must never hang the button.
+  // Upgrade tripwire: LoginRedirect.test.tsx fails if sign-in stops landing on the next page.
+  let unbind = () => {};
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    new Promise<void>((resolve) => {
+      unbind = store.listen((value) => {
+        if (value.isRefetching) return;
+        resolve();
+      });
+    }),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, REFRESH_WAIT_MS);
+    }),
+  ]);
+  unbind();
+  clearTimeout(timer);
 }
