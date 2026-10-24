@@ -200,4 +200,66 @@ describe('AcceptInvitePage', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Join Café Lindenhof' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Too many requests.');
   });
+
+  it('double-click on create account signs up once', async () => {
+    apiFetch.mockResolvedValue(preview());
+    signUpEmail.mockImplementation(() => new Promise((r) => setTimeout(() => r({ data: {} }), 30)));
+    apiSend.mockResolvedValue({ organizationId: 'org-9' });
+    renderPage();
+    await openForm();
+    await userEvent.type(screen.getByLabelText('Name'), 'Lukas');
+    await userEvent.type(screen.getByLabelText('Password'), 'longenough1');
+    await userEvent.dblClick(screen.getByRole('button', { name: 'Create account and join' }));
+    await waitFor(() => expect(apiSend).toHaveBeenCalledTimes(1));
+    expect(signUpEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it('double-click on Join accepts once', async () => {
+    useSession.mockReturnValue(signedInAs('lukas@shiftswap.test'));
+    apiFetch.mockResolvedValue(preview());
+    apiSend.mockImplementation(
+      () => new Promise((r) => setTimeout(() => r({ organizationId: 'org-9' }), 30)),
+    );
+    renderPage();
+    await userEvent.dblClick(await screen.findByRole('button', { name: 'Join Café Lindenhof' }));
+    await waitFor(() => expect(apiSend).toHaveBeenCalledTimes(1));
+  });
+
+  it('a non-duplicate 422 sign-up error shows the generic message', async () => {
+    apiFetch.mockResolvedValue(preview());
+    signUpEmail.mockResolvedValue({ error: { status: 422, code: 'INVALID_PASSWORD' } });
+    renderPage();
+    await openForm();
+    await userEvent.type(screen.getByLabelText('Name'), 'Lukas');
+    await userEvent.type(screen.getByLabelText('Password'), 'longenough1');
+    await userEvent.click(screen.getByRole('button', { name: 'Create account and join' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Something went wrong. Please try again.',
+    );
+    expect(screen.queryByRole('link', { name: 'Log in' })).toBeNull();
+  });
+
+  it('a throwing sign-up shows the generic message', async () => {
+    apiFetch.mockResolvedValue(preview());
+    signUpEmail.mockRejectedValue(new TypeError('Failed to fetch'));
+    renderPage();
+    await openForm();
+    await userEvent.type(screen.getByLabelText('Name'), 'Lukas');
+    await userEvent.type(screen.getByLabelText('Password'), 'longenough1');
+    await userEvent.click(screen.getByRole('button', { name: 'Create account and join' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Something went wrong. Please try again.',
+    );
+  });
+
+  it('a failing log out shows the generic message', async () => {
+    useSession.mockReturnValue(signedInAs('anna@shiftswap.test'));
+    apiFetch.mockResolvedValue(preview());
+    signOut.mockRejectedValue(new TypeError('Failed to fetch'));
+    renderPage();
+    await userEvent.click(await screen.findByRole('button', { name: 'Log out' }));
+    expect(await screen.findAllByText('Something went wrong. Please try again.')).not.toHaveLength(
+      0,
+    );
+  });
 });

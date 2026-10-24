@@ -94,4 +94,14 @@ describe('SignUpPage', () => {
       'Something went wrong. Please try again.',
     );
   });
+
+  it('a 422 with another code is a generic error without the log-in hint', async () => {
+    signUpEmail.mockResolvedValue({ error: { status: 422, code: 'INVALID_PASSWORD' } });
+    renderPage();
+    await fill();
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Something went wrong. Please try again.',
+    );
+    expect(screen.getAllByRole('link', { name: 'Log in' })).toHaveLength(1);
+  });
 });

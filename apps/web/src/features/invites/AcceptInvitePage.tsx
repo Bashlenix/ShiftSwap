@@ -12,7 +12,7 @@ import { authClient } from '../../lib/auth-client';
 import { errorMessage } from '../../lib/error-messages';
 import { withNext } from '../../lib/safe-next';
 import { isAlreadyRegistered } from '../../lib/sign-up-error';
-import { PASSWORD_ERROR, PASSWORD_HINT } from '../auth/SignUpPage';
+import { PASSWORD_ERROR, PASSWORD_HINT } from '../../lib/password-copy';
 
 const GENERIC_FAILURE = 'Something went wrong. Please try again.';
 const STATE_COPY: Record<string, string> = {
@@ -68,6 +68,8 @@ function ValidInvite({ invite, token }: { invite: InvitePreviewDto; token: strin
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { data: session, isPending: sessionPending } = authClient.useSession();
+  const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [existingAccount, setExistingAccount] = useState(false);
@@ -92,6 +94,9 @@ function ValidInvite({ invite, token }: { invite: InvitePreviewDto; token: strin
   });
 
   async function acceptAndGo() {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
     setError(null);
     try {
       const { organizationId } = await accept.mutateAsync();
@@ -107,11 +112,15 @@ function ValidInvite({ invite, token }: { invite: InvitePreviewDto; token: strin
       } else {
         setError(errorMessage(err));
       }
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
     }
   }
 
   async function onSignUp(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (inFlight.current) return;
     const form = new FormData(e.currentTarget);
     const name = String(form.get('name') ?? '').trim();
     const password = String(form.get('password') ?? '');
@@ -125,6 +134,8 @@ function ValidInvite({ invite, token }: { invite: InvitePreviewDto; token: strin
       (found.name ? nameRef : passwordRef).current?.focus();
       return;
     }
+    inFlight.current = true;
+    setBusy(true);
     try {
       const { error: signUpError } = await authClient.signUp.email({
         email: invite.email.trim().toLowerCase(),
@@ -138,21 +149,27 @@ function ValidInvite({ invite, token }: { invite: InvitePreviewDto; token: strin
         } else {
           setError(GENERIC_FAILURE);
         }
+        inFlight.current = false;
+        setBusy(false);
         return;
       }
     } catch {
       setError(GENERIC_FAILURE);
+      inFlight.current = false;
+      setBusy(false);
       return;
     }
+    inFlight.current = false;
     await acceptAndGo();
   }
 
   async function logOut() {
     try {
       await authClient.signOut();
-    } finally {
       setServerMismatch(false);
       queryClient.removeQueries({ queryKey: ['me'] });
+    } catch {
+      setError(GENERIC_FAILURE);
     }
   }
 
@@ -173,6 +190,7 @@ function ValidInvite({ invite, token }: { invite: InvitePreviewDto; token: strin
         <p role="alert">
           {`You're signed in as ${session.user.email}, but this invite is for ${invite.email}.`}
         </p>
+        <Feedback error={error} />
         <Button variant="outline" onClick={() => void logOut()}>
           Log out
         </Button>
@@ -185,7 +203,7 @@ function ValidInvite({ invite, token }: { invite: InvitePreviewDto; token: strin
       <Shell title={title}>
         <p>Invited: {invite.email}</p>
         <Feedback error={error} />
-        <Button disabled={accept.isPending} onClick={() => void acceptAndGo()}>
+        <Button disabled={busy} onClick={() => void acceptAndGo()}>
           {title}
         </Button>
       </Shell>
@@ -263,7 +281,7 @@ function ValidInvite({ invite, token }: { invite: InvitePreviewDto; token: strin
               </Link>
             </p>
           )}
-          <Button type="submit" disabled={accept.isPending}>
+          <Button type="submit" disabled={busy}>
             Create account and join
           </Button>
         </form>

@@ -6,11 +6,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/ca
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { authClient } from '../../lib/auth-client';
+import { PASSWORD_ERROR, PASSWORD_HINT } from '../../lib/password-copy';
 import { safeNext, withNext } from '../../lib/safe-next';
 import { isAlreadyRegistered } from '../../lib/sign-up-error';
 
-export const PASSWORD_HINT = 'At least 8 characters';
-export const PASSWORD_ERROR = 'Use at least 8 characters';
 const GENERIC_FAILURE = 'Something went wrong. Please try again.';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -25,6 +24,7 @@ export function SignUpPage() {
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [exists, setExists] = useState(false);
   const refs = {
     name: useRef<HTMLInputElement>(null),
     email: useRef<HTMLInputElement>(null),
@@ -33,6 +33,7 @@ export function SignUpPage() {
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (busy) return;
     const form = new FormData(e.currentTarget);
     const name = String(form.get('name') ?? '').trim();
     const email = String(form.get('email') ?? '')
@@ -45,6 +46,7 @@ export function SignUpPage() {
     if (password.length < 8) found.password = PASSWORD_ERROR;
     setErrors(found);
     setFormError(null);
+    setExists(false);
     const first = (['name', 'email', 'password'] as const).find((f) => found[f]);
     if (first) {
       refs[first].current?.focus();
@@ -54,10 +56,10 @@ export function SignUpPage() {
     try {
       const { error } = await authClient.signUp.email({ email, password, name });
       if (error) {
+        const already = isAlreadyRegistered(error);
+        setExists(already);
         setFormError(
-          isAlreadyRegistered(error)
-            ? 'You already have an account. Log in to continue.'
-            : GENERIC_FAILURE,
+          already ? 'You already have an account. Log in to continue.' : GENERIC_FAILURE,
         );
         return;
       }
@@ -116,7 +118,7 @@ export function SignUpPage() {
               {fieldError('password')}
             </div>
             <Feedback error={formError} />
-            {formError?.startsWith('You already have') && (
+            {exists && (
               <p>
                 <Link className="font-medium text-indigo-800 underline" to={loginHref}>
                   Log in
