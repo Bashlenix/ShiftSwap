@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { NotificationDto } from '@shiftswap/shared';
+import { notificationPath, type NotificationDto } from '@shiftswap/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MANAGER_ORG, renderWithOrg } from '../../test-utils';
 import { NotificationsPage } from './NotificationsPage';
@@ -57,6 +57,41 @@ describe('NotificationsPage', () => {
     const second = screen.getByText('You got the shift Sat 24 Oct, 10:00–18:00.').closest('li')!;
     expect(within(second).queryByText('New')).toBeNull();
     expect(within(second).getByRole('link', { name: 'My shifts' })).toBeVisible();
+  });
+
+  it('links every notification to the same path as its email (shared notificationPath)', async () => {
+    const base = item('x').payload;
+    const items = [
+      item('c', { payload: { ...base, role: 'manager' } }),
+      item('d', { type: 'OFFER_EXPIRED', payload: { ...base, role: 'owner' } }),
+      item('e', { type: 'OFFER_APPROVED', payload: { ...base, role: 'notSelected' } }),
+      item('f', { type: 'ACCEPTANCE_INVALIDATED', payload: { ...base, role: 'candidate' } }),
+      item('g', { type: 'OPEN_SHIFT_FILLED', payload: { ...base, role: 'manager' } }),
+    ];
+    apiFetch.mockResolvedValue({ items, nextCursor: null });
+    renderWithOrg(<NotificationsPage />, MANAGER_ORG);
+    await screen.findAllByRole('listitem');
+    const lis = screen.getAllByRole('listitem');
+    expect(lis).toHaveLength(items.length);
+    items.forEach((n, i) => {
+      expect(within(lis[i]).getByRole('link')).toHaveAttribute(
+        'href',
+        notificationPath('org-1', n),
+      );
+    });
+    expect(within(lis[0]).getByRole('link')).toHaveAccessibleName('Offer review');
+    expect(within(lis[1]).getByRole('link')).toHaveAccessibleName('My shifts');
+    expect(within(lis[3]).getByRole('link')).toHaveAccessibleName('Open offers');
+  });
+
+  it('shows no link when the target is the notifications page itself', async () => {
+    apiFetch.mockResolvedValue({
+      items: [item('h', { type: 'MEMBER_DEACTIVATED', payload: {} })],
+      nextCursor: null,
+    });
+    renderWithOrg(<NotificationsPage />, MANAGER_ORG);
+    const li = (await screen.findByText(/A member was deactivated/)).closest('li')!;
+    expect(within(li).queryByRole('link')).toBeNull();
   });
 
   it('shows an empty state', async () => {

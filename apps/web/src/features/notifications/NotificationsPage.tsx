@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import { notificationText, type NotificationDto } from '@shiftswap/shared';
+import { notificationPath, notificationText, type NotificationDto } from '@shiftswap/shared';
 import { BellOff, CheckCheck } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
@@ -11,7 +11,7 @@ import { apiFetch, apiSend } from '../../lib/api';
 import { formatDateTime } from '../../lib/format';
 import { errorMessage } from '../../lib/error-messages';
 import { cn } from '../../lib/utils';
-import { orgApi, useOrg, type OrgInfo } from '../org/useOrg';
+import { orgApi, useOrg } from '../org/useOrg';
 import { unreadKey } from './useUnreadCount';
 
 interface Page {
@@ -19,35 +19,18 @@ interface Page {
   nextCursor: string | null;
 }
 
-function linkFor(n: NotificationDto, org: OrgInfo): { to: string; label: string } | null {
-  const base = `/orgs/${org.organizationId}`;
-  const manager = org.accessLevel !== 'EMPLOYEE';
-  const { role, offerId } = n.payload;
-  switch (n.type) {
-    case 'OFFER_CREATED':
-      if (role === 'eligible') return { to: `${base}/offers`, label: 'Open offers' };
-      return manager
-        ? { to: `${base}/review${offerId ? `/${offerId}` : ''}`, label: 'Offer review' }
-        : null;
-    case 'ACCEPTANCE_RECEIVED':
-      return manager
-        ? { to: `${base}/review${offerId ? `/${offerId}` : ''}`, label: 'Offer review' }
-        : { to: `${base}/me/shifts`, label: 'My shifts' };
-    case 'OFFER_APPROVED':
-      return role === 'selected' || role === 'owner'
-        ? { to: `${base}/me/shifts`, label: 'My shifts' }
-        : null;
-    case 'OPEN_SHIFT_FILLED':
-      return role === 'selected'
-        ? { to: `${base}/me/shifts`, label: 'My shifts' }
-        : manager
-          ? { to: `${base}/review`, label: 'Offer review' }
-          : null;
-    case 'ACCEPTANCE_INVALIDATED':
-      return { to: `${base}/offers`, label: 'Open offers' };
-    default:
-      return null;
-  }
+const LABELS: [suffix: string, label: string][] = [
+  ['/offers', 'Open offers'],
+  ['/me/shifts', 'My shifts'],
+  ['/review', 'Offer review'],
+];
+
+/** Same target as the email deep link; none when that is this page itself. */
+function linkFor(n: NotificationDto, orgId: string): { to: string; label: string } | null {
+  const to = notificationPath(orgId, n);
+  const rest = to.slice(`/orgs/${orgId}`.length);
+  const hit = LABELS.find(([p]) => rest === p || rest.startsWith(`${p}/`));
+  return hit ? { to, label: hit[1] } : null;
 }
 
 export function NotificationsPage() {
@@ -110,7 +93,7 @@ export function NotificationsPage() {
         <ul className="flex flex-col gap-2">
           {items.map((n) => {
             const unread = n.readAt === null;
-            const link = linkFor(n, org);
+            const link = linkFor(n, org.organizationId);
             return (
               <li
                 key={n.id}
