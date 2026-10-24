@@ -30,7 +30,10 @@ export class AccountService {
       where: { userId, status: 'ACTIVE' },
       include: { organization: true },
     });
-    active.sort((a, b) => byId(a.organizationId, b.organizationId));
+    // ADMIN memberships first (then by org id): a LAST_ADMIN raised by a concurrent demotion then
+    // fails before any other membership has been converted.
+    const rank = (m: { accessLevel: string }) => (m.accessLevel === 'ADMIN' ? 0 : 1);
+    active.sort((a, b) => rank(a) - rank(b) || byId(a.organizationId, b.organizationId));
 
     // Fail fast with every blocking org before anything changes. Deactivation re-checks
     // LAST_ADMIN under its lock, so a concurrent demotion is still caught (see below).

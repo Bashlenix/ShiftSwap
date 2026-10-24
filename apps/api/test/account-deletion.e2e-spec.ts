@@ -236,6 +236,49 @@ describe('DELETE /api/v1/me (account deletion, FR-23, SDD §27/§35)', () => {
     expect(m.status).toBe('DEACTIVATED');
   });
 
+  it('deactivates ADMIN memberships first, so a racing LAST_ADMIN fails before other orgs are touched', async () => {
+    // The employee org sorts before the admin org, so ordering by org id alone would touch it first.
+    const [o1, o2] = [(await makeOrg(ctx.prisma)).orgId, (await makeOrg(ctx.prisma)).orgId].sort();
+    const [empOrg, adminOrg] = [o1, o2];
+    await makeMember(ctx, empOrg, { accessLevel: 'ADMIN' });
+    const otherAdmin = await makeMember(ctx, adminOrg, { accessLevel: 'ADMIN' });
+    const m = await makeMember(ctx, adminOrg, { accessLevel: 'ADMIN' });
+    const empM = await joinOrg(empOrg, m);
+    const shift = await makeShift(empOrg, empM.id);
+
+    const deactivation = app.select(AccountModule).get(DeactivationService);
+    const real = deactivation.deactivate.bind(deactivation);
+    const order: string[] = [];
+    const spy = jest.spyOn(deactivation, 'deactivate').mockImplementation(async (...args) => {
+      // The other admin is demoted after the up-front LAST_ADMIN check (a racing demotion).
+      if (order.length === 0) {
+        await ctx.prisma.membership.update({
+          where: { id: otherAdmin.membershipId },
+          data: { accessLevel: 'EMPLOYEE' },
+        });
+      }
+      order.push(args[1]);
+      return real(...args);
+    });
+    let res;
+    try {
+      res = await deleteMe(m.cookie);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(order[0]).toBe(m.membershipId);
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe('LAST_ADMIN');
+    expect(res.body.error.details).toEqual({ organizationIds: [adminOrg] });
+    const rows = await ctx.prisma.membership.findMany({
+      where: { id: { in: [m.membershipId, empM.id] } },
+    });
+    expect(rows.map((r) => r.status)).toEqual(['ACTIVE', 'ACTIVE']);
+    expect(await ctx.prisma.shift.findUniqueOrThrow({ where: { id: shift } })).toMatchObject({
+      assignedMembershipId: empM.id,
+    });
+  });
+
   it('409 VERSION_CONFLICT without anonymising when a membership is reactivated mid-deletion', async () => {
     const { orgId } = await makeOrg(ctx.prisma);
     await makeMember(ctx, orgId, { accessLevel: 'ADMIN' });
