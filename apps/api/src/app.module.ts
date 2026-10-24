@@ -10,6 +10,7 @@ import { ShiftsModule } from './shifts/shifts.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { OffersModule } from './offers/offers.module';
 import { OrgsModule } from './orgs/orgs.module';
+import { MembersModule } from './members/members.module';
 import { MeController } from './me/me.controller';
 import { HealthController } from './health/health.controller';
 import type { PrismaClient } from './generated/prisma/client';
@@ -45,6 +46,7 @@ export class AppModule {
         MailModule,
         AuditModule,
         DirectoryModule,
+        MembersModule.register(env),
         ShiftsModule,
         AvailabilityModule,
         OffersModule,

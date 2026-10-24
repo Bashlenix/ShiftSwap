@@ -5,7 +5,13 @@ import { DiscoveryService, MetadataScanner, ModulesContainer } from '@nestjs/cor
 import { api, createTestApp, makeMember, makeOrg, type TestCtx } from './helpers/test-app';
 
 type Actor = 'manager' | 'employee' | 'employee2';
-type Params = { orgId: string; shiftId: string; offerId: string; id: string };
+type Params = {
+  orgId: string;
+  shiftId: string;
+  offerId: string;
+  id: string;
+  membershipId: string;
+};
 
 /** One concrete request; built fresh (own scratch entities) by each row's `setup`. */
 interface Req {
@@ -73,8 +79,17 @@ describe('tenancy and permission sweep', () => {
   let app: INestApplication;
   let f: Fixture;
 
-  const base = (): Params => ({ orgId: f.a.orgId, shiftId: '', offerId: '', id: '' });
+  const base = (): Params => ({ orgId: f.a.orgId, shiftId: '', offerId: '', id: '', membershipId: '' });
 
+  const mkPlaceholder = (withEmail: boolean) =>
+    ctx.prisma.membership.create({
+      data: {
+        organizationId: f.a.orgId,
+        displayName: 'Scratch Placeholder',
+        email: withEmail ? `scratch-${Date.now()}-${slotCounter++}@shiftswap.test` : null,
+        accessLevel: 'EMPLOYEE',
+      },
+    });
   const mkShift = (assignedMembershipId: string | null) =>
     ctx.prisma.shift.create({
       data: { organizationId: f.a.orgId, assignedMembershipId, ...nextSlot() },
@@ -131,6 +146,63 @@ describe('tenancy and permission sweep', () => {
       managerOnly: true,
       setup: async () => ({ params: base() }),
       foreign: [],
+    },
+    {
+      route: 'POST orgs/:orgId/members',
+      actor: 'manager',
+      expected: 201,
+      managerOnly: true,
+      setup: async (fx) => ({
+        params: base(),
+        body: {
+          displayName: 'Sweep Invitee',
+          email: `sweep-${Date.now()}-${slotCounter++}@shiftswap.test`,
+          skillIds: [fx.a.skillId],
+          appOrigin: 'http://localhost:5173',
+        },
+      }),
+      foreign: [
+        {
+          name: 'skillIds of org B',
+          mutate: (r, fx) => ({ ...r, body: { ...r.body, skillIds: [fx.b.skillId] } }),
+        },
+      ],
+    },
+    {
+      route: 'PATCH orgs/:orgId/members/:membershipId',
+      actor: 'manager',
+      expected: 200,
+      managerOnly: true,
+      setup: async (fx) => ({
+        params: { ...base(), membershipId: (await mkPlaceholder(false)).id },
+        body: { displayName: 'Renamed', skillIds: [fx.a.skillId] },
+      }),
+      foreign: [
+        {
+          name: 'membershipId of org B',
+          mutate: (r, fx) => ({ ...r, params: { ...r.params, membershipId: fx.b.employeeId } }),
+        },
+        {
+          name: 'skillIds of org B',
+          mutate: (r, fx) => ({ ...r, body: { ...r.body, skillIds: [fx.b.skillId] } }),
+        },
+      ],
+    },
+    {
+      route: 'POST orgs/:orgId/members/:membershipId/invite',
+      actor: 'manager',
+      expected: 201,
+      managerOnly: true,
+      setup: async () => ({
+        params: { ...base(), membershipId: (await mkPlaceholder(true)).id },
+        body: { appOrigin: 'http://localhost:5173' },
+      }),
+      foreign: [
+        {
+          name: 'membershipId of org B',
+          mutate: (r, fx) => ({ ...r, params: { ...r.params, membershipId: fx.b.employeeId } }),
+        },
+      ],
     },
     {
       route: 'GET orgs/:orgId/skills',
@@ -446,6 +518,7 @@ describe('tenancy and permission sweep', () => {
       .replace(':orgId', req.params.orgId)
       .replace(':shiftId', req.params.shiftId)
       .replace(':offerId', req.params.offerId)
+      .replace(':membershipId', req.params.membershipId)
       .replace(':id', req.params.id);
     const client = api(app, cookie);
     const call = {
