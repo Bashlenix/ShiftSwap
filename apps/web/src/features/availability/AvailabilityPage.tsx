@@ -1,12 +1,17 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CalendarOff } from 'lucide-react';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Feedback } from '../../components/Feedback';
 import { Button } from '../../components/ui/button';
+import { Card } from '../../components/ui/card';
+import { EmptyState } from '../../components/ui/empty-state';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
+import { PageHeader } from '../../components/ui/page-header';
+import { Table, TD, TH, THead, TR } from '../../components/ui/table';
 import { apiFetch, apiSend } from '../../lib/api';
 import { errorMessage } from '../../lib/error-messages';
 import { formatShiftTime, localToInstant } from '../../lib/format';
@@ -79,84 +84,81 @@ export function AvailabilityPage() {
 
   return (
     <section aria-labelledby="availability-heading" className="flex flex-col gap-4">
-      <h1 id="availability-heading" className="text-2xl font-semibold">
-        Availability
-      </h1>
-      <p className="text-sm text-slate-700">
-        Unavailable times are hard blocks: you won&apos;t be offered shifts that overlap them.
-      </p>
-      <form
-        onSubmit={handleSubmit(onSubmit)}
-        noValidate
-        className="flex flex-wrap items-start gap-4"
-      >
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="from">From</Label>
-          <Input
-            id="from"
-            type="datetime-local"
-            aria-invalid={errors.startAt ? 'true' : undefined}
-            aria-describedby={errors.startAt ? 'from-error' : undefined}
-            {...register('startAt')}
-          />
-          <div aria-live="polite">
-            {errors.startAt && (
-              <p id="from-error" className="text-sm text-red-700">
-                {errors.startAt.message}
-              </p>
-            )}
+      <PageHeader
+        id="availability-heading"
+        title="Availability"
+        description="Unavailable times are hard blocks: you won't be offered shifts that overlap them."
+      />
+      <Card className="flex flex-col gap-3 p-4 sm:p-6">
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          noValidate
+          className="flex flex-wrap items-start gap-4"
+        >
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="from">From</Label>
+            <Input
+              id="from"
+              type="datetime-local"
+              aria-invalid={errors.startAt ? 'true' : undefined}
+              aria-describedby={errors.startAt ? 'from-error' : undefined}
+              {...register('startAt')}
+            />
+            <div aria-live="polite">
+              {errors.startAt && (
+                <p id="from-error" className="text-sm text-danger">
+                  {errors.startAt.message}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="until">Until</Label>
-          <Input
-            id="until"
-            type="datetime-local"
-            aria-invalid={errors.endAt ? 'true' : undefined}
-            aria-describedby={errors.endAt ? 'until-error' : undefined}
-            {...register('endAt')}
-          />
-          <div aria-live="polite">
-            {errors.endAt && (
-              <p id="until-error" className="text-sm text-red-700">
-                {errors.endAt.message}
-              </p>
-            )}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="until">Until</Label>
+            <Input
+              id="until"
+              type="datetime-local"
+              aria-invalid={errors.endAt ? 'true' : undefined}
+              aria-describedby={errors.endAt ? 'until-error' : undefined}
+              {...register('endAt')}
+            />
+            <div aria-live="polite">
+              {errors.endAt && (
+                <p id="until-error" className="text-sm text-danger">
+                  {errors.endAt.message}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
-        <Button type="submit" className="mt-6" disabled={write.isPending}>
-          Add
-        </Button>
-      </form>
-      <p className="text-xs text-slate-600">
-        Times are in the organisation&apos;s time zone ({org.timezone}).
-      </p>
+          <Button type="submit" className="mt-5" disabled={write.isPending}>
+            Add
+          </Button>
+        </form>
+        <p className="text-xs text-muted">
+          Times are in the organisation&apos;s time zone ({org.timezone}).
+        </p>
+      </Card>
       <Feedback error={error} notice={notice} />
       {list.isPending && <p>Loading…</p>}
       {list.isError && <p role="alert">Could not load your unavailable times. Please try again.</p>}
-      {list.data?.length === 0 && <p>You have not marked any unavailable times.</p>}
+      {list.data?.length === 0 && (
+        <EmptyState icon={CalendarOff} title="You have not marked any unavailable times." />
+      )}
       {list.data && list.data.length > 0 && (
-        <table className="w-full text-left text-sm">
+        <Table>
           <caption className="sr-only">Your unavailable times</caption>
-          <thead>
-            <tr className="border-b border-slate-300">
-              <th scope="col" className="p-2">
-                Unavailable
-              </th>
-              <th scope="col" className="p-2">
-                Action
-              </th>
-            </tr>
-          </thead>
+          <THead>
+            <TR>
+              <TH>Unavailable</TH>
+              <TH>Action</TH>
+            </TR>
+          </THead>
           <tbody>
             {list.data.map((u) => {
               const label = formatShiftTime(u.startAt, u.endAt, org.timezone);
               return (
-                <tr key={u.id} className="border-b border-slate-200">
-                  <th scope="row" className="p-2 font-medium">
-                    {label}
-                  </th>
-                  <td className="p-2">
+                <TR key={u.id}>
+                  <TH scope="row">{label}</TH>
+                  <TD>
                     <Button
                       variant="outline"
                       aria-label={`Delete ${label}`}
@@ -171,12 +173,12 @@ export function AvailabilityPage() {
                     >
                       Delete
                     </Button>
-                  </td>
-                </tr>
+                  </TD>
+                </TR>
               );
             })}
           </tbody>
-        </table>
+        </Table>
       )}
       <PreferenceGrid />
     </section>

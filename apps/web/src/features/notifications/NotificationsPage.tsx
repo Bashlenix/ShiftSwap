@@ -1,12 +1,16 @@
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { notificationText, type NotificationDto } from '@shiftswap/shared';
+import { BellOff, CheckCheck } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { Feedback } from '../../components/Feedback';
 import { Button } from '../../components/ui/button';
+import { EmptyState } from '../../components/ui/empty-state';
+import { PageHeader } from '../../components/ui/page-header';
 import { apiFetch, apiSend } from '../../lib/api';
 import { formatDateTime } from '../../lib/format';
 import { errorMessage } from '../../lib/error-messages';
+import { cn } from '../../lib/utils';
 import { orgApi, useOrg, type OrgInfo } from '../org/useOrg';
 import { unreadKey } from './useUnreadCount';
 
@@ -86,18 +90,22 @@ export function NotificationsPage() {
 
   return (
     <section aria-labelledby="notifications-heading" className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 id="notifications-heading" className="text-2xl font-semibold">
-          Notifications
-        </h1>
-        <Button variant="outline" className="ml-auto" disabled={pending} onClick={markAllRead}>
-          Mark all as read
-        </Button>
-      </div>
+      <PageHeader
+        id="notifications-heading"
+        title="Notifications"
+        actions={
+          <Button variant="outline" disabled={pending} onClick={markAllRead}>
+            <CheckCheck aria-hidden="true" />
+            Mark all as read
+          </Button>
+        }
+      />
       <Feedback error={error} notice={notice} />
       {query.isError && <p role="alert">Could not load notifications. Please try again.</p>}
       {query.isPending && <p>Loading…</p>}
-      {query.data && items.length === 0 && <p>No notifications yet.</p>}
+      {query.data && items.length === 0 && (
+        <EmptyState icon={BellOff} title="No notifications yet." />
+      )}
       {items.length > 0 && (
         <ul className="flex flex-col gap-2">
           {items.map((n) => {
@@ -106,20 +114,25 @@ export function NotificationsPage() {
             return (
               <li
                 key={n.id}
-                className={`rounded-md border p-3 ${unread ? 'border-indigo-400 border-l-4 bg-indigo-50' : 'border-slate-200 bg-white'}`}
+                className={cn(
+                  'rounded-card border p-4 shadow-soft',
+                  unread
+                    ? 'border-indigo-200 border-l-4 border-l-brand bg-indigo-50'
+                    : 'border-slate-200 bg-surface',
+                )}
               >
                 <p className={unread ? 'font-semibold' : ''}>
                   {unread && (
-                    <span className="mr-2 rounded-full border border-indigo-700 px-2 py-0.5 text-xs font-medium text-indigo-900">
+                    <span className="mr-2 rounded-full bg-brand px-2 py-0.5 text-xs font-medium text-white">
                       New
                     </span>
                   )}
                   {notificationText(n, org.timezone)}
                 </p>
-                <p className="mt-1 flex flex-wrap gap-x-3 text-sm text-slate-700">
+                <p className="mt-1 flex flex-wrap gap-x-3 text-sm text-muted">
                   <span>{formatDateTime(n.createdAt, org.timezone)}</span>
                   {link && (
-                    <Link to={link.to} className="text-indigo-800 underline">
+                    <Link to={link.to} className="font-medium text-brand-strong underline">
                       {link.label}
                     </Link>
                   )}

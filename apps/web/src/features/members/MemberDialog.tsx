@@ -9,6 +9,7 @@ import type {
 import { useState } from 'react';
 import { Feedback } from '../../components/Feedback';
 import { Button } from '../../components/ui/button';
+import { controlClass } from '../../components/ui/control';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../../components/ui/dialog';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
@@ -32,8 +33,7 @@ interface Props {
   onAfterClose?: () => void;
 }
 
-const fieldClass =
-  'h-10 w-full rounded-md border border-slate-400 bg-white px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700 disabled:bg-slate-100';
+const fieldClass = `h-11 ${controlClass}`;
 
 const toHours = (min: number | null) => (min === null ? '' : String(Math.round(min / 6) / 10));
 

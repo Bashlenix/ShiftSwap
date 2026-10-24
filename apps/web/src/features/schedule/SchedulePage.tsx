@@ -1,9 +1,12 @@
 import { useQuery } from '@tanstack/react-query';
 import type { MemberDto, ShiftDto, SkillDto } from '@shiftswap/shared';
 import { useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router';
 import { Feedback } from '../../components/Feedback';
 import { Button } from '../../components/ui/button';
+import { PageHeader } from '../../components/ui/page-header';
+import { Table, TableCaption, TD, TH, THead, TR } from '../../components/ui/table';
 import { apiFetch } from '../../lib/api';
 import { orgApi, useOrg } from '../org/useOrg';
 import { useSkillNames } from '../org/useSkillNames';
@@ -11,6 +14,8 @@ import { ShiftDialog, type ShiftDialogResult } from './ShiftDialog';
 import { dayKey, isWeekParam, localParts, shiftWeek, weekParam, weekRange } from './week';
 
 const UNASSIGNED = 'unassigned';
+const weekLink =
+  'inline-flex h-11 items-center gap-1 rounded-lg border border-control bg-surface px-3 text-sm font-medium text-slate-900 hover:bg-slate-100';
 
 export function SchedulePage() {
   const org = useOrg();
@@ -92,88 +97,80 @@ function ScheduleGrid() {
 
   return (
     <section aria-labelledby="schedule-heading" className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 id="schedule-heading" className="text-2xl font-semibold">
-          Schedule
-        </h1>
-        <nav aria-label="Week" className="flex items-center gap-3 text-sm">
-          <Link
-            to={`?week=${shiftWeek(week, -1, org.timezone)}`}
-            className="text-indigo-800 underline"
-          >
-            Previous week
-          </Link>
-          <Link
-            to={`?week=${shiftWeek(week, 1, org.timezone)}`}
-            className="text-indigo-800 underline"
-          >
-            Next week
-          </Link>
-        </nav>
-        <Button className="ml-auto" onClick={() => openDialog(null)}>
-          New shift
-        </Button>
-      </div>
+      <PageHeader
+        id="schedule-heading"
+        title="Schedule"
+        actions={
+          <>
+            <nav aria-label="Week" className="flex items-center gap-2">
+              <Link to={`?week=${shiftWeek(week, -1, org.timezone)}`} className={weekLink}>
+                <ChevronLeft aria-hidden="true" className="size-4" />
+                Previous week
+              </Link>
+              <Link to={`?week=${shiftWeek(week, 1, org.timezone)}`} className={weekLink}>
+                Next week
+                <ChevronRight aria-hidden="true" className="size-4" />
+              </Link>
+            </nav>
+            <Button onClick={() => openDialog(null)}>
+              <Plus aria-hidden="true" />
+              New shift
+            </Button>
+          </>
+        }
+      />
       <Feedback error={error} notice={notice} containerRef={feedbackRef} />
       {(members.isError || shifts.isError) && (
         <p role="alert">Could not load the schedule. Please try again.</p>
       )}
       {(members.isPending || shifts.isPending) && <p>Loading…</p>}
       {members.data && shifts.data && (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[56rem] table-fixed border-collapse text-left text-sm">
-            <caption className="pb-2 text-left font-medium">Week of {caption}</caption>
-            <thead>
-              <tr className="border-b border-slate-300">
-                <th scope="col" className="w-32 p-2">
-                  Team member
-                </th>
-                {range.days.map((d) => (
-                  <th key={d} scope="col" className="p-2">
-                    {dayLabel(d)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id} className="border-b border-slate-200 align-top">
-                  <th scope="row" className="p-2 font-medium">
-                    {row.name}
-                  </th>
-                  {range.days.map((d) => (
-                    <td key={d} className="p-1">
-                      <div className="flex flex-col gap-1">
-                        {(byCell.get(`${row.id}|${d}`) ?? []).map((s) => {
-                          const t0 = localParts(s.startAt, org.timezone).time;
-                          const t1 = localParts(s.endAt, org.timezone).time;
-                          const skillText =
-                            s.requiredSkillIds.length > 0 ? skillNames(s.requiredSkillIds) : null;
-                          return (
-                            <button
-                              key={s.id}
-                              type="button"
-                              onClick={() => openDialog(s)}
-                              className="rounded-md border border-slate-300 bg-white p-1.5 text-left text-xs hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-indigo-700"
-                            >
-                              {`${t0}–${t1}`}
-                              {skillText && ` · ${skillText}`}
-                              {s.openOfferId && (
-                                <span className="mt-1 block w-fit rounded-full border border-indigo-300 bg-indigo-50 px-1.5 py-0.5 font-medium text-indigo-900">
-                                  {s.assignedMembershipId ? 'Offered' : 'Open shift'}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </td>
-                  ))}
-                </tr>
+        <Table className="min-w-[56rem] table-fixed">
+          <TableCaption>Week of {caption}</TableCaption>
+          <THead>
+            <TR>
+              <TH className="w-32">Team member</TH>
+              {range.days.map((d) => (
+                <TH key={d}>{dayLabel(d)}</TH>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TR>
+          </THead>
+          <tbody>
+            {rows.map((row) => (
+              <TR key={row.id} className="align-top">
+                <TH scope="row">{row.name}</TH>
+                {range.days.map((d) => (
+                  <TD key={d} className="p-1.5 align-top">
+                    <div className="flex flex-col gap-1">
+                      {(byCell.get(`${row.id}|${d}`) ?? []).map((s) => {
+                        const t0 = localParts(s.startAt, org.timezone).time;
+                        const t1 = localParts(s.endAt, org.timezone).time;
+                        const skillText =
+                          s.requiredSkillIds.length > 0 ? skillNames(s.requiredSkillIds) : null;
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => openDialog(s)}
+                            className="w-full rounded-lg border border-control bg-surface p-1.5 text-left text-xs hover:bg-indigo-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+                          >
+                            {`${t0}–${t1}`}
+                            {skillText && ` · ${skillText}`}
+                            {s.openOfferId && (
+                              <span className="mt-1 block w-fit rounded-full border border-indigo-200 bg-indigo-50 px-1.5 py-0.5 font-medium text-brand-strong">
+                                {s.assignedMembershipId ? 'Offered' : 'Open shift'}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </TD>
+                ))}
+              </TR>
+            ))}
+          </tbody>
+        </Table>
       )}
       <ShiftDialog
         open={dialog !== null}

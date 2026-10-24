@@ -130,7 +130,7 @@ export function OrgLayout() {
   return (
     <OrgContext.Provider value={org}>
       <div className="min-h-screen">
-        <header className="sticky top-0 z-30 border-b border-slate-200 bg-surface/95 backdrop-blur supports-[backdrop-filter]:bg-surface/80">
+        <header className="z-30 border-b border-slate-200 bg-surface sm:sticky sm:top-0 sm:bg-surface/95 sm:backdrop-blur">
           <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-1 px-4 py-2">
             <Wordmark />
             <div className="order-last flex w-full min-w-0 items-center gap-2 sm:order-none sm:w-auto sm:border-l sm:border-slate-200 sm:pl-4">

@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { CalendarCheck } from 'lucide-react';
 import type { OfferSummaryDto, ShiftDto } from '@shiftswap/shared';
 import { useRef, useState } from 'react';
 import { Feedback } from '../../components/Feedback';
@@ -11,6 +12,9 @@ import {
   DialogDescription,
   DialogTitle,
 } from '../../components/ui/dialog';
+import { EmptyState } from '../../components/ui/empty-state';
+import { PageHeader } from '../../components/ui/page-header';
+import { Table, TD, TH, THead, TR } from '../../components/ui/table';
 import { apiFetch } from '../../lib/api';
 import { formatShiftTime } from '../../lib/format';
 import { orgApi, useOrg } from '../org/useOrg';
@@ -67,36 +71,29 @@ export function MyShiftsPage() {
   return (
     <div className="flex flex-col gap-8">
       <section aria-labelledby="my-shifts-heading" className="flex flex-col gap-4">
-        <h1 id="my-shifts-heading" className="text-2xl font-semibold">
-          My shifts
-        </h1>
-        <p className="text-sm text-slate-700">Your shifts for the next 14 days.</p>
+        <PageHeader
+          id="my-shifts-heading"
+          title="My shifts"
+          description="Your shifts for the next 14 days."
+        />
         <Feedback error={error} notice={notice} containerRef={feedbackRef} />
         {shifts.isPending && <p>Loading…</p>}
         {shifts.isError && <p role="alert">Could not load your shifts. Please try again.</p>}
-        {shifts.data?.length === 0 && <p>You have no shifts in the next 14 days.</p>}
+        {shifts.data?.length === 0 && (
+          <EmptyState icon={CalendarCheck} title="You have no shifts in the next 14 days." />
+        )}
         {shifts.data && shifts.data.length > 0 && (
-          <table className="w-full text-left text-sm">
+          <Table>
             <caption className="sr-only">Your shifts in the next 14 days</caption>
-            <thead>
-              <tr className="border-b border-slate-300">
-                <th scope="col" className="p-2">
-                  Time
-                </th>
-                <th scope="col" className="p-2">
-                  Skills
-                </th>
-                <th scope="col" className="p-2">
-                  Location
-                </th>
-                <th scope="col" className="p-2">
-                  Offer
-                </th>
-                <th scope="col" className="p-2">
-                  Action
-                </th>
-              </tr>
-            </thead>
+            <THead>
+              <TR>
+                <TH>Time</TH>
+                <TH>Skills</TH>
+                <TH>Location</TH>
+                <TH>Offer</TH>
+                <TH>Action</TH>
+              </TR>
+            </THead>
             <tbody>
               {shifts.data.map((s) => {
                 const own = openGiveAway(s.id);
@@ -105,16 +102,12 @@ export function MyShiftsPage() {
                   !own &&
                   Date.now() < Date.parse(s.startAt) - org.offerLeadTimeMin * 60_000;
                 return (
-                  <tr key={s.id} className="border-b border-slate-200">
-                    <th scope="row" className="p-2 font-medium">
-                      {formatShiftTime(s.startAt, s.endAt, org.timezone)}
-                    </th>
-                    <td className="p-2">{skillNames(s.requiredSkillIds)}</td>
-                    <td className="p-2">{s.location ?? '—'}</td>
-                    <td className="p-2">
-                      {s.openOfferId ? <StatusBadge status="OPEN" /> : 'Not offered'}
-                    </td>
-                    <td className="p-2">
+                  <TR key={s.id}>
+                    <TH scope="row">{formatShiftTime(s.startAt, s.endAt, org.timezone)}</TH>
+                    <TD>{skillNames(s.requiredSkillIds)}</TD>
+                    <TD>{s.location ?? '—'}</TD>
+                    <TD>{s.openOfferId ? <StatusBadge status="OPEN" /> : 'Not offered'}</TD>
+                    <TD>
                       {canOffer && (
                         <Button disabled={mutation.isPending} onClick={() => setConfirming(s)}>
                           Offer this shift
@@ -136,88 +129,78 @@ export function MyShiftsPage() {
                           Withdraw offer
                         </Button>
                       )}
-                    </td>
-                  </tr>
+                    </TD>
+                  </TR>
                 );
               })}
             </tbody>
-          </table>
+          </Table>
         )}
       </section>
 
-      <section aria-labelledby="my-offers-heading" className="flex flex-col gap-4">
-        <h2 id="my-offers-heading" className="text-xl font-semibold">
+      <section aria-labelledby="my-offers-heading" className="flex flex-col gap-3">
+        <h2 id="my-offers-heading" className="text-lg font-semibold tracking-tight">
           My offers
         </h2>
-        {ownOffers?.length === 0 && <p>You have not offered any shifts.</p>}
+        {ownOffers?.length === 0 && (
+          <EmptyState className="py-6" title="You have not offered any shifts." />
+        )}
         {ownOffers && ownOffers.length > 0 && (
-          <table className="w-full text-left text-sm">
+          <Table>
             <caption className="sr-only">Shifts you have offered</caption>
-            <thead>
-              <tr className="border-b border-slate-300">
-                <th scope="col" className="p-2">
-                  Shift
-                </th>
-                <th scope="col" className="p-2">
-                  Status
-                </th>
-                <th scope="col" className="p-2">
-                  Interested colleagues
-                </th>
-              </tr>
-            </thead>
+            <THead>
+              <TR>
+                <TH>Shift</TH>
+                <TH>Status</TH>
+                <TH>Interested colleagues</TH>
+              </TR>
+            </THead>
             <tbody>
               {ownOffers.map((o) => (
-                <tr key={o.id} className="border-b border-slate-200">
-                  <th scope="row" className="p-2 font-medium">
+                <TR key={o.id}>
+                  <TH scope="row">
                     {formatShiftTime(o.shift.startAt, o.shift.endAt, org.timezone)}
-                  </th>
-                  <td className="p-2">
+                  </TH>
+                  <TD>
                     <StatusBadge status={o.status} />
-                  </td>
-                  <td className="p-2">{o.pendingCount}</td>
-                </tr>
+                  </TD>
+                  <TD>{o.pendingCount}</TD>
+                </TR>
               ))}
             </tbody>
-          </table>
+          </Table>
         )}
       </section>
 
-      <section aria-labelledby="my-acceptances-heading" className="flex flex-col gap-4">
-        <h2 id="my-acceptances-heading" className="text-xl font-semibold">
+      <section aria-labelledby="my-acceptances-heading" className="flex flex-col gap-3">
+        <h2 id="my-acceptances-heading" className="text-lg font-semibold tracking-tight">
           My acceptances
         </h2>
-        {acceptedOffers?.length === 0 && <p>You have not asked to take any shifts.</p>}
+        {acceptedOffers?.length === 0 && (
+          <EmptyState className="py-6" title="You have not asked to take any shifts." />
+        )}
         {acceptedOffers && acceptedOffers.length > 0 && (
-          <table className="w-full text-left text-sm">
+          <Table>
             <caption className="sr-only">Shifts you have asked to take</caption>
-            <thead>
-              <tr className="border-b border-slate-300">
-                <th scope="col" className="p-2">
-                  Time
-                </th>
-                <th scope="col" className="p-2">
-                  Skills
-                </th>
-                <th scope="col" className="p-2">
-                  Status
-                </th>
-              </tr>
-            </thead>
+            <THead>
+              <TR>
+                <TH>Time</TH>
+                <TH>Skills</TH>
+                <TH>Status</TH>
+              </TR>
+            </THead>
             <tbody>
               {acceptedOffers.map((o) => (
-                <tr key={o.id} className="border-b border-slate-200">
-                  <th scope="row" className="p-2 font-medium">
+                <TR key={o.id}>
+                  <TH scope="row">
                     {formatShiftTime(o.shift.startAt, o.shift.endAt, org.timezone)}
-                  </th>
-                  <td className="p-2">{skillNames(o.shift.requiredSkillIds)}</td>
-                  <td className="p-2">
-                    {o.myAcceptanceStatus && <StatusBadge status={o.myAcceptanceStatus} />}
-                  </td>
-                </tr>
+                  </TH>
+                  <TD>{skillNames(o.shift.requiredSkillIds)}</TD>
+                  <TD>{o.myAcceptanceStatus && <StatusBadge status={o.myAcceptanceStatus} />}</TD>
+                </TR>
               ))}
             </tbody>
-          </table>
+          </Table>
         )}
       </section>
 

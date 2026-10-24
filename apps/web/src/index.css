@@ -26,6 +26,11 @@
 }
 
 @layer base {
+  /* Keep focused elements clear of the sticky top bar (WCAG 2.4.11). */
+  html {
+    scroll-padding-top: 5rem;
+  }
+
   body {
     @apply bg-page font-sans text-slate-900 antialiased;
   }

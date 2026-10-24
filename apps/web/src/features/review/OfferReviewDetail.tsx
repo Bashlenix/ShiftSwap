@@ -51,7 +51,7 @@ export function OfferReviewDetail({ offerId }: { offerId: string }) {
         id="review-detail-heading"
         ref={headingRef}
         tabIndex={-1}
-        className="text-xl font-semibold outline-none"
+        className="text-lg font-semibold tracking-tight outline-none"
       >
         {formatShiftTime(o.shift.startAt, o.shift.endAt, org.timezone)}
       </h2>
@@ -66,7 +66,7 @@ export function OfferReviewDetail({ offerId }: { offerId: string }) {
         {o.acceptances.map((a) => (
           <li
             key={a.id}
-            className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-slate-300 p-3"
+            className="flex flex-wrap items-start justify-between gap-3 rounded-card border border-slate-200 bg-surface p-4 shadow-soft"
           >
             <div className="flex flex-col gap-1">
               <span className="font-medium">{a.displayName}</span>

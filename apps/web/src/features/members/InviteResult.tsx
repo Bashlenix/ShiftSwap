@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Feedback } from '../../components/Feedback';
 import { Button } from '../../components/ui/button';
+import { controlClass } from '../../components/ui/control';
+import { cn } from '../../lib/utils';
 
 /** Shown after an invite is created or re-sent; the link is also the manual fallback. */
 export function InviteResult({
@@ -29,7 +31,7 @@ export function InviteResult({
   return (
     <section
       aria-label="Invite"
-      className="flex flex-col gap-2 rounded-md border border-green-300 bg-green-50 p-3"
+      className="flex flex-col gap-2 rounded-card border border-emerald-200 bg-emerald-50 p-4"
     >
       <p ref={containerRef} tabIndex={-1} className="text-sm font-medium outline-none">
         Invite sent to {email}.
@@ -42,7 +44,7 @@ export function InviteResult({
           href="/mailpit/"
           target="_blank"
           rel="noopener"
-          className="text-sm text-indigo-800 underline"
+          className="text-sm font-medium text-brand-strong underline"
         >
           Open demo inbox
         </a>
@@ -52,7 +54,7 @@ export function InviteResult({
         aria-label="Invite link"
         value={link}
         onFocus={(e) => e.currentTarget.select()}
-        className="h-9 w-full rounded-md border border-slate-400 bg-white px-2 text-xs"
+        className={cn(controlClass, 'h-9 px-2 text-xs')}
       />
       <Feedback error={error} notice={copied} />
     </section>

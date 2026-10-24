@@ -1,10 +1,13 @@
 import * as React from 'react';
 import { cn } from '../../lib/utils';
 
-/** A card-styled table; wide tables scroll inside their own container, never the page. */
+/**
+ * A card-styled table; wide tables scroll inside their own container, never the page.
+ * `relative` keeps absolutely positioned children (e.g. `sr-only` text) inside that container.
+ */
 export function Table({ className, ...props }: React.ComponentProps<'table'>) {
   return (
-    <div className="overflow-x-auto rounded-card border border-slate-200 bg-surface shadow-soft">
+    <div className="relative overflow-x-auto rounded-card border border-slate-200 bg-surface shadow-soft">
       <table className={cn('w-full border-collapse text-left text-sm', className)} {...props} />
     </div>
   );
