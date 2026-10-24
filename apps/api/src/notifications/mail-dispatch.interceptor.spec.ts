@@ -1,6 +1,6 @@
 import { Logger, type CallHandler, type ExecutionContext } from '@nestjs/common';
 import { lastValueFrom, of, throwError } from 'rxjs';
-import type { AppOriginRegistry } from './app-origin';
+import { AppOriginRegistry } from './app-origin';
 import { MailDispatchInterceptor } from './mail-dispatch.interceptor';
 import type { NotificationMailer } from './notification-mailer';
 
@@ -13,10 +13,15 @@ function setup(dispatch: () => Promise<number> = () => Promise.resolve(0)) {
     mailer as unknown as NotificationMailer,
     origins as unknown as AppOriginRegistry,
   );
-  const run = (method: string, handler: CallHandler, headers: Record<string, string> = {}) => {
+  const run = (
+    method: string,
+    handler: CallHandler,
+    headers: Record<string, string> = {},
+    user: { id: string } | null = { id: 'u1' },
+  ) => {
     const context = {
       getType: () => 'http',
-      switchToHttp: () => ({ getRequest: () => ({ method, headers }) }),
+      switchToHttp: () => ({ getRequest: () => ({ method, headers, user }) }),
     } as unknown as ExecutionContext;
     return lastValueFrom(interceptor.intercept(context, handler));
   };
@@ -29,10 +34,59 @@ const failing: CallHandler = { handle: () => throwError(() => new Error('conflic
 describe('MailDispatchInterceptor', () => {
   afterEach(() => jest.restoreAllMocks());
 
-  it('remembers the x-app-origin header', async () => {
+  it('remembers the x-app-origin header of a signed-in request', async () => {
     const { origins, run } = setup();
     await run('GET', ok, { 'x-app-origin': 'http://localhost:5173' });
     expect(origins.remember).toHaveBeenCalledWith('http://localhost:5173');
+  });
+
+  it('never remembers the header of an unauthenticated request', async () => {
+    const { origins, run } = setup();
+    await run('GET', ok, { 'x-app-origin': 'http://localhost:5173' }, null);
+    expect(origins.remember).not.toHaveBeenCalled();
+  });
+
+  describe('with a real registry in Codespace wildcard mode', () => {
+    const saved = { ...process.env };
+    beforeEach(() => {
+      process.env.ALLOW_CODESPACE_ORIGINS = 'true';
+      delete process.env.CODESPACE_NAME;
+      delete process.env.GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN;
+    });
+    afterAll(() => {
+      process.env = saved;
+    });
+
+    const realSetup = () => {
+      const registry = new AppOriginRegistry();
+      const interceptor = new MailDispatchInterceptor(
+        { dispatchPending: jest.fn(() => Promise.resolve(0)) } as unknown as NotificationMailer,
+        registry,
+      );
+      const run = (headers: Record<string, string>, user?: { id: string }) =>
+        lastValueFrom(
+          interceptor.intercept(
+            {
+              getType: () => 'http',
+              switchToHttp: () => ({ getRequest: () => ({ method: 'GET', headers, user }) }),
+            } as unknown as ExecutionContext,
+            ok,
+          ),
+        );
+      return { registry, run };
+    };
+
+    it('an unauthenticated trusted-looking header does not change baseUrl()', async () => {
+      const { registry, run } = realSetup();
+      await run({ 'x-app-origin': 'https://attacker-5173.app.github.dev' });
+      expect(registry.baseUrl()).toBe('http://localhost:5173');
+    });
+
+    it('a signed-in request changes baseUrl()', async () => {
+      const { registry, run } = realSetup();
+      await run({ 'x-app-origin': 'https://real-5173.app.github.dev' }, { id: 'u1' });
+      expect(registry.baseUrl()).toBe('https://real-5173.app.github.dev');
+    });
   });
 
   it('dispatches once after a successful POST', async () => {

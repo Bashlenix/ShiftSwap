@@ -7,7 +7,9 @@ import {
 } from '@shiftswap/shared';
 import { DateTime } from 'luxon';
 import { MailService } from '../src/mail/mail.service';
+import { AppOriginRegistry } from '../src/notifications/app-origin';
 import { NotificationMailer } from '../src/notifications/notification-mailer';
+import request from 'supertest';
 import { createApp } from '../src/app.factory';
 import { OffersService } from '../src/offers/offers.service';
 import {
@@ -279,6 +281,31 @@ describe('notification emails (outbox dispatch, SDD §23)', () => {
       expect(sent?.text).toContain(`${TEST_ORIGIN}/orgs/${orgId}/offers`);
     } finally {
       await live.close();
+    }
+  });
+  it('only signed-in requests set the deep-link origin (unauthenticated header ignored)', async () => {
+    const saved = process.env.ALLOW_CODESPACE_ORIGINS;
+    process.env.ALLOW_CODESPACE_ORIGINS = 'true';
+    const live = await createApp({ env: { ...process.env, NODE_ENV: 'development' } });
+    await live.init();
+    try {
+      const registry = live.get(AppOriginRegistry);
+      const before = registry.baseUrl();
+      const anon = await request(live.getHttpServer())
+        .get('/health/live')
+        .set('x-app-origin', 'https://attacker-5173.app.github.dev');
+      expect(anon.status).toBe(200);
+      expect(registry.baseUrl()).toBe(before);
+
+      const authed = await api(live, owner.cookie)
+        .get(`/api/v1/orgs/${orgId}/notifications`)
+        .set('x-app-origin', 'https://real-5173.app.github.dev');
+      expect(authed.status).toBe(200);
+      expect(registry.baseUrl()).toBe('https://real-5173.app.github.dev');
+    } finally {
+      await live.close();
+      if (saved === undefined) delete process.env.ALLOW_CODESPACE_ORIGINS;
+      else process.env.ALLOW_CODESPACE_ORIGINS = saved;
     }
   });
 });
