@@ -34,6 +34,9 @@ Seeded shifts are relative to today (Europe/Berlin) and reset on every API start
 1. Log in as Tom (manager) → Offer review → open Anna's give-away offer → see each candidate's score breakdown (Lukas and Mia) → approve Lukas.
 2. Log in as Lukas → Open offers does not list the Barista open shift (he fails the daily hour limit and minimum rest).
 3. Log in as Anna → Open offers → claim the Barista shift.
+4. Log in as Maria (admin) → Members → Add person with a fresh email → open the demo inbox (`/mailpit/`) → open the invite link → Create account → you land in Café Lindenhof as the new member. Seeded extra: Jonas Braun (`jonas@shiftswap.test`) already has a pending invite (the seed sends no email; use Resend invite on Members to get the mail).
+5. Log in as Tom → the nav shows Notifications (2 unread acceptances on Anna's give-away) → Mark all as read.
+6. Log in as Maria → Members → Deactivate Mia → her future shifts show as open shifts in Schedule.
 
 Demo inbox: open `/mailpit/` on the app address (the same address as the app, for example `<app address>/mailpit/`).
 

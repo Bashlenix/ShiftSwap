@@ -3,6 +3,8 @@ import type { Auth } from '../auth/auth';
 import type { PrismaClient } from '../generated/prisma/client';
 import {
   DEMO_ACCOUNTS,
+  DEMO_INVITES,
+  DEMO_NOTIFICATIONS,
   DEMO_MEMBER_SKILLS,
   DEMO_OFFERS,
   DEMO_OFFER_LEAD_MIN,
@@ -13,6 +15,7 @@ import {
   DEMO_SKILLS,
   demoShiftWindow,
 } from './demo-data';
+import { INVITE_TTL_MS, newInviteToken } from '../members/invite-token';
 
 const DEMO_TZ = 'Europe/Berlin';
 
@@ -45,6 +48,8 @@ export async function seedDemo(
   shifts: number;
   offers: number;
   acceptances: number;
+  invites: number;
+  notifications: number;
 }> {
   await resetAppTables(prisma);
 
@@ -107,6 +112,35 @@ export async function seedDemo(
     ),
   });
 
+  // Pending invites: a login-less membership plus an invite row (only the token hash is stored).
+  for (const inv of DEMO_INVITES) {
+    const orgId = orgIds.get(inv.org)!;
+    const createdBy = memberIds.get(`${inv.org}|${inv.createdBy}`)!;
+    const membership = await prisma.membership.create({
+      data: {
+        organizationId: orgId,
+        userId: null,
+        displayName: inv.displayName,
+        email: inv.email,
+        accessLevel: inv.accessLevel,
+        skills: {
+          create: inv.skills.map((name) => ({ skillId: skillIds.get(`${inv.org}|${name}`)! })),
+        },
+      },
+    });
+    memberIds.set(`${inv.org}|${inv.email}`, membership.id);
+    await prisma.invite.create({
+      data: {
+        organizationId: orgId,
+        membershipId: membership.id,
+        email: inv.email,
+        tokenHash: newInviteToken().tokenHash,
+        expiresAt: new Date(Date.now() + INVITE_TTL_MS),
+        createdByMembershipId: createdBy,
+      },
+    });
+  }
+
   // Shifts, relative to today in the org timezone.
   const today = DateTime.now().setZone(DEMO_TZ).startOf('day');
   const shiftRows = DEMO_SHIFTS.map((s) => ({
@@ -136,6 +170,7 @@ export async function seedDemo(
 
   // Offers + acceptances (Lukas strictly before Mia so ties break in his favour).
   const now = Date.now();
+  const offerIds = new Map<string, string>();
   for (const o of DEMO_OFFERS) {
     const shift = shiftRows.find((r) => r.def.key === o.shift)!;
     const org = shift.def.org;
@@ -155,6 +190,7 @@ export async function seedDemo(
         expiresAt,
       },
     });
+    offerIds.set(o.shift, offer.id);
     await prisma.acceptance.createMany({
       data: o.acceptances.map((email, i) => ({
         organizationId: orgIds.get(org)!,
@@ -166,18 +202,60 @@ export async function seedDemo(
     });
   }
 
+  // Unread notifications, same payload shape as the live ones (IDs, times, kind, role).
+  for (const n of DEMO_NOTIFICATIONS) {
+    const shift = shiftRows.find((r) => r.def.key === n.shift)!;
+    const offerDef = DEMO_OFFERS.find((o) => o.shift === n.shift)!;
+    await prisma.notification.create({
+      data: {
+        organizationId: orgIds.get(shift.def.org)!,
+        recipientMembershipId: memberIds.get(`${shift.def.org}|${n.recipient}`)!,
+        type: n.type,
+        payload: {
+          offerId: offerIds.get(n.shift)!,
+          shiftId: shift.id,
+          shiftStartAt: shift.startAt.toISOString(),
+          shiftEndAt: shift.endAt.toISOString(),
+          kind: offerDef.kind,
+          role: n.role,
+        },
+      },
+    });
+  }
+
   // Sessions created by signup are not needed; the demo logs in fresh.
   await prisma.session.deleteMany();
 
-  const [users, organizations, memberships, skills, shifts, offers, acceptances] =
-    await Promise.all([
-      prisma.user.count(),
-      prisma.organization.count(),
-      prisma.membership.count(),
-      prisma.skill.count(),
-      prisma.shift.count(),
-      prisma.offer.count(),
-      prisma.acceptance.count(),
-    ]);
-  return { users, organizations, memberships, skills, shifts, offers, acceptances };
+  const [
+    users,
+    organizations,
+    memberships,
+    skills,
+    shifts,
+    offers,
+    acceptances,
+    invites,
+    notifications,
+  ] = await Promise.all([
+    prisma.user.count(),
+    prisma.organization.count(),
+    prisma.membership.count(),
+    prisma.skill.count(),
+    prisma.shift.count(),
+    prisma.offer.count(),
+    prisma.acceptance.count(),
+    prisma.invite.count(),
+    prisma.notification.count(),
+  ]);
+  return {
+    users,
+    organizations,
+    memberships,
+    skills,
+    shifts,
+    offers,
+    acceptances,
+    invites,
+    notifications,
+  };
 }

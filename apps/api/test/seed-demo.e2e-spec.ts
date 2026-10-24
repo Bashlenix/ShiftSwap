@@ -13,11 +13,13 @@ import { seedDemo } from '../src/seed/seed-demo';
 const COUNTS = {
   users: 6,
   organizations: 2,
-  memberships: 8,
+  memberships: 9,
   skills: 4,
   shifts: 10,
   offers: 2,
   acceptances: 2,
+  invites: 1,
+  notifications: 3,
 };
 
 describe('seedDemo', () => {
@@ -147,6 +149,45 @@ describe('seedDemo', () => {
       for (const o of await prisma.offer.findMany()) {
         expect(o.expiresAt.getTime()).toBeGreaterThan(now.getTime());
       }
+    });
+
+    it("seeds Jonas Braun's pending invite without sending mail", async () => {
+      const invite = await prisma.invite.findFirstOrThrow({
+        include: { membership: true, createdBy: true },
+      });
+      expect(invite.email).toBe('jonas@shiftswap.test');
+      expect(invite.tokenHash).toMatch(/^[0-9a-f]{64}$/);
+      expect(invite.acceptedAt).toBeNull();
+      expect(invite.revokedAt).toBeNull();
+      const week = 7 * 24 * 3600_000;
+      expect(
+        Math.abs(invite.expiresAt.getTime() - (invite.createdAt.getTime() + week)),
+      ).toBeLessThan(60_000);
+      expect(invite.createdBy.displayName).toBe('Maria Keller');
+      expect(invite.membership.displayName).toBe('Jonas Braun');
+      expect(invite.membership.accessLevel).toBe('EMPLOYEE');
+      expect(invite.membership.userId).toBeNull();
+      const skills = await prisma.membershipSkill.findMany({
+        where: { membershipId: invite.membershipId },
+        include: { skill: true },
+      });
+      expect(skills.map((s) => s.skill.name)).toEqual(['Service']);
+    });
+
+    it('seeds unread notifications for Tom and Anna', async () => {
+      const rows = await prisma.notification.findMany({
+        include: { recipient: true },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(rows.every((r) => r.readAt === null)).toBe(true);
+      const summary = rows.map((r) => [r.recipient.displayName, r.type]).sort();
+      expect(summary).toEqual([
+        ['Anna Schmidt', 'OFFER_CREATED'],
+        ['Tom Becker', 'ACCEPTANCE_RECEIVED'],
+        ['Tom Becker', 'ACCEPTANCE_RECEIVED'],
+      ]);
+      const anna = rows.find((r) => r.recipient.displayName === 'Anna Schmidt')!;
+      expect(anna.payload).toMatchObject({ kind: 'OPEN_SHIFT', role: 'eligible' });
     });
 
     it('offers: give-away by Anna with Lukas first, open shift by Tom', async () => {
