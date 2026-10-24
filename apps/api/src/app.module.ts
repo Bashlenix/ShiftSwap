@@ -2,6 +2,7 @@ import { DynamicModule, Module } from '@nestjs/common';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { LoggerModule } from 'nestjs-pino';
+import { AccountModule } from './account/account.module';
 import { AuthModule } from './auth/auth.module';
 import { pathOnly } from './config/log-url';
 import { AuditModule } from './audit/audit.module';
@@ -56,6 +57,7 @@ export class AppModule {
         OffersModule,
         NotificationsModule,
         OrgsModule,
+        AccountModule,
         // Offer expiry scheduler (SDD §25); tests drive OffersService.expireDue directly.
         ...(env.NODE_ENV === 'test' ? [] : [ScheduleModule.forRoot()]),
       ],

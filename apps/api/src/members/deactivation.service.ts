@@ -61,11 +61,20 @@ export class DeactivationService {
     private readonly offers: OffersService,
   ) {}
 
-  async deactivate(org: OrgContext, membershipId: string): Promise<DeactivationResult> {
+  /**
+   * `selfDeletion` (account deletion, FR-23): the member deactivates their own membership, so
+   * the admin-actor check and the self check are skipped. LAST_ADMIN stays enforced.
+   */
+  async deactivate(
+    org: OrgContext,
+    membershipId: string,
+    opts: { selfDeletion?: boolean } = {},
+  ): Promise<DeactivationResult> {
+    const selfDeletion = opts.selfDeletion === true;
     for (let attempt = 1; ; attempt++) {
       // Many row locks in one transaction: Prisma's default 5 s timeout is too short.
       const result = await this.prisma.$transaction(
-        (tx) => this.deactivateOnce(tx, org, membershipId, new Date()),
+        (tx) => this.deactivateOnce(tx, org, membershipId, new Date(), selfDeletion),
         { timeout: 15_000 },
       );
       if (result !== RETRY) return result;
@@ -141,6 +150,7 @@ export class DeactivationService {
     org: OrgContext,
     membershipId: string,
     now: Date,
+    selfDeletion: boolean,
   ): Promise<DeactivationResult | typeof RETRY> {
     // 1. Open invites first; then an unlocked read of the affected set and the
     //    offer -> shift -> membership locks.
@@ -156,7 +166,7 @@ export class DeactivationService {
     const { target, activeAdminIds } = await lockMemberAndAdmins(tx, org.orgId, membershipId);
 
     // 2. Checks under the membership lock.
-    if (target.accessLevel === 'ADMIN' && org.accessLevel !== 'ADMIN') {
+    if (!selfDeletion && target.accessLevel === 'ADMIN' && org.accessLevel !== 'ADMIN') {
       throw new DomainError('FORBIDDEN', 'Only an admin can deactivate an admin');
     }
     if (target.status !== 'ACTIVE') {
@@ -165,7 +175,7 @@ export class DeactivationService {
     if (target.accessLevel === 'ADMIN' && activeAdminIds.length <= 1) {
       throw new DomainError('LAST_ADMIN', 'The last admin cannot be deactivated');
     }
-    if (target.id === org.membershipId) {
+    if (!selfDeletion && target.id === org.membershipId) {
       throw new DomainError('INVALID_TRANSITION', 'You cannot deactivate yourself');
     }
 
