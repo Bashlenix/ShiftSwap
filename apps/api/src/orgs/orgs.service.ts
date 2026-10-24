@@ -80,26 +80,27 @@ export class OrgsService {
       ...input,
       ...(input.timezone !== undefined ? { timezone: canonicalTimeZone(input.timezone) } : {}),
     };
-    return this.prisma.$transaction(async (tx) => {
-      const lockedOfferIds =
-        input.offerLeadTimeMin === undefined
-          ? []
-          : (
-              await tx.$queryRaw<{ id: string }[]>`
+    return this.prisma.$transaction(
+      async (tx) => {
+        const lockedOfferIds =
+          input.offerLeadTimeMin === undefined
+            ? []
+            : (
+                await tx.$queryRaw<{ id: string }[]>`
                 SELECT id FROM "offers"
                  WHERE organization_id = ${org.orgId} AND status = 'OPEN'
                  ORDER BY id FOR UPDATE`
-            ).map((r) => r.id);
-      await tx.$queryRaw`
+              ).map((r) => r.id);
+        await tx.$queryRaw`
         SELECT id FROM "organizations" WHERE id = ${org.orgId} FOR NO KEY UPDATE`;
-      const current = await tx.organization.findUniqueOrThrow({ where: { id: org.orgId } });
-      const changed = SETTINGS.filter((k) => next[k] !== undefined && next[k] !== current[k]);
-      if (changed.length === 0) return toOrgDto(current);
+        const current = await tx.organization.findUniqueOrThrow({ where: { id: org.orgId } });
+        const changed = SETTINGS.filter((k) => next[k] !== undefined && next[k] !== current[k]);
+        if (changed.length === 0) return toOrgDto(current);
 
-      const data = Object.fromEntries(changed.map((k) => [k, next[k]]));
-      const updated = await tx.organization.update({ where: { id: org.orgId }, data });
-      if (changed.includes('offerLeadTimeMin') && lockedOfferIds.length > 0) {
-        await tx.$executeRaw`
+        const data = Object.fromEntries(changed.map((k) => [k, next[k]]));
+        const updated = await tx.organization.update({ where: { id: org.orgId }, data });
+        if (changed.includes('offerLeadTimeMin') && lockedOfferIds.length > 0) {
+          await tx.$executeRaw`
           UPDATE "offers" o
              SET expires_at = s.start_at - make_interval(mins => ${updated.offerLeadTimeMin}::int),
                  version = o.version + 1,
@@ -109,17 +110,20 @@ export class OrgsService {
              AND o.id = ANY(${lockedOfferIds}::text[])
              AND o.status = 'OPEN'
              AND o.organization_id = ${org.orgId}`;
-      }
-      await this.audit.record(tx, {
-        orgId: org.orgId,
-        actorMembershipId: org.membershipId,
-        action: 'org.updated',
-        entityType: 'organization',
-        entityId: org.orgId,
-        before: Object.fromEntries(changed.map((k) => [k, current[k]])),
-        after: Object.fromEntries(changed.map((k) => [k, updated[k]])),
-      });
-      return toOrgDto(updated);
-    });
+        }
+        await this.audit.record(tx, {
+          orgId: org.orgId,
+          actorMembershipId: org.membershipId,
+          action: 'org.updated',
+          entityType: 'organization',
+          entityId: org.orgId,
+          before: Object.fromEntries(changed.map((k) => [k, current[k]])),
+          after: Object.fromEntries(changed.map((k) => [k, updated[k]])),
+        });
+        return toOrgDto(updated);
+      },
+      // Locks every OPEN offer of the org: Prisma's default 5 s timeout is too short.
+      { timeout: 15_000 },
+    );
   }
 }

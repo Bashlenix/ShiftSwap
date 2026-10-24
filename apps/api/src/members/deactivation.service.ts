@@ -63,8 +63,10 @@ export class DeactivationService {
 
   async deactivate(org: OrgContext, membershipId: string): Promise<DeactivationResult> {
     for (let attempt = 1; ; attempt++) {
-      const result = await this.prisma.$transaction((tx) =>
-        this.deactivateOnce(tx, org, membershipId, new Date()),
+      // Many row locks in one transaction: Prisma's default 5 s timeout is too short.
+      const result = await this.prisma.$transaction(
+        (tx) => this.deactivateOnce(tx, org, membershipId, new Date()),
+        { timeout: 15_000 },
       );
       if (result !== RETRY) return result;
       if (attempt >= MAX_ATTEMPTS) {
