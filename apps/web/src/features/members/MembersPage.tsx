@@ -330,7 +330,11 @@ function MembersTable() {
         onClose={closeDialog}
         onAfterClose={afterClose}
       />
-      <InviteDialog member={inviting} onClose={closeDialog} onAfterClose={afterClose} />
+      <InviteDialog
+        member={inviting && (members.data?.find((x) => x.id === inviting.id) ?? inviting)}
+        onClose={closeDialog}
+        onAfterClose={afterClose}
+      />
       <Dialog open={confirming !== null}>
         {confirming && (
           <DialogContent

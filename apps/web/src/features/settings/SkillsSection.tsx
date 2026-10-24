@@ -44,7 +44,17 @@ export function SkillsSection() {
     );
   }
 
-  async function run(work: () => Promise<void>, done: string, onFail?: () => void) {
+  /** Focus an element once React has re-rendered the list; falls back to the heading. */
+  function focusLater(id: string) {
+    setTimeout(() => (document.getElementById(id) ?? headingRef.current)?.focus(), 0);
+  }
+
+  async function run(
+    work: () => Promise<void>,
+    done: string,
+    onFail?: () => void,
+    focusId?: string,
+  ) {
     setPending(true);
     setError(null);
     setNotice(null);
@@ -52,7 +62,8 @@ export function SkillsSection() {
       await work();
       await queryClient.invalidateQueries({ queryKey: ['skills', org.organizationId] });
       setNotice(done);
-      headingRef.current?.focus();
+      if (focusId) focusLater(focusId);
+      else headingRef.current?.focus();
     } catch (err) {
       setError(skillError(err));
       onFail?.();
@@ -73,10 +84,15 @@ export function SkillsSection() {
     e.preventDefault();
     if (!editing) return;
     const { id, name } = editing;
-    void run(async () => {
-      await apiSend('PATCH', orgApi(org, `/skills/${id}`), { name: name.trim() });
-      setEditing(null);
-    }, 'Skill renamed.');
+    void run(
+      async () => {
+        await apiSend('PATCH', orgApi(org, `/skills/${id}`), { name: name.trim() });
+        setEditing(null);
+      },
+      'Skill renamed.',
+      undefined,
+      `rename-skill-${id}`,
+    );
   }
 
   return (
@@ -131,6 +147,7 @@ export function SkillsSection() {
                     variant="outline"
                     className="h-8 px-3"
                     disabled={pending}
+                    id={`rename-skill-${s.id}`}
                     aria-label={`Rename ${s.name}`}
                     onClick={() => {
                       setError(null);
@@ -158,6 +175,7 @@ export function SkillsSection() {
                             () => apiSend('DELETE', orgApi(org, `/skills/${s.id}`)),
                             'Skill deleted.',
                             () => focusDelete(s.id),
+                            'new-skill',
                           );
                         }}
                       >

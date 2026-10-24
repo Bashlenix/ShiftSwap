@@ -179,6 +179,32 @@ describe('MembersPage', () => {
     expect(screen.getByRole('dialog')).toBeVisible();
   });
 
+  it('closes the invite dialog when the refreshed member already has an email', async () => {
+    apiSend.mockRejectedValue(
+      new ApiError(409, {
+        error: { code: 'INVALID_TRANSITION', message: 'Already invited elsewhere.' },
+      }),
+    );
+    setup();
+    await screen.findByRole('table');
+    await userEvent.click(screen.getByRole('button', { name: 'Invite Tom Placeholder' }));
+    const dialog = await screen.findByRole('dialog');
+    // Someone else invited Tom meanwhile: the refreshed list now has his email.
+    apiFetch.mockImplementation((path: string) => {
+      if (path.includes('/skills')) return Promise.resolve([{ id: 'sk1', name: 'Barista' }]);
+      return Promise.resolve(
+        people
+          .filter((p) => p.status === 'ACTIVE')
+          .map((p) =>
+            p.id === 'm4' ? { ...p, email: 'tom@example.com', invitePending: true } : p,
+          ),
+      );
+    });
+    await userEvent.type(within(dialog).getByLabelText('Email'), 'tom@example.com');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Send invite' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
   it('cancels the invite dialog without a request', async () => {
     setup();
     await screen.findByRole('table');
