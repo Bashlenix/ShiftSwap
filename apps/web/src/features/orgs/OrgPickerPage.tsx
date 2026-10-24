@@ -46,6 +46,12 @@ export function OrgPickerPage() {
           >
             Create organisation
           </Link>
+          <Link
+            to="/account"
+            className="mt-2 block rounded-md border border-slate-300 px-4 py-3 text-center font-medium text-indigo-800 hover:bg-slate-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-700"
+          >
+            Account
+          </Link>
           <Button variant="outline" className="mt-2 w-full" onClick={() => void logOut()}>
             Log out
           </Button>

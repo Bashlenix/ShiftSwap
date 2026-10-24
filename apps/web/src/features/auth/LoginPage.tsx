@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { loginSchema, type LoginInput } from '@shiftswap/shared';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { Link, useNavigate, useSearchParams } from 'react-router';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
@@ -23,6 +23,8 @@ function messageFor(status: number): string {
 export function LoginPage() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
+  const state = useLocation().state as { notice?: unknown } | null;
+  const notice = typeof state?.notice === 'string' ? state.notice : null;
   const rawNext = params.get('next');
   const next = safeNext(rawNext);
   const [formError, setFormError] = useState<string | null>(null);
@@ -53,6 +55,7 @@ export function LoginPage() {
           <CardTitle>Log in to ShiftSwap</CardTitle>
         </CardHeader>
         <CardContent>
+          <div role="status">{notice && <p className="mb-4 text-sm">{notice}</p>}</div>
           <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="email">Email</Label>

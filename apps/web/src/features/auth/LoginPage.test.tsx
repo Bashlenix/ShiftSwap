@@ -9,7 +9,7 @@ vi.mock('../../lib/auth-client', () => ({
   authClient: { signIn: { email: signInEmail } },
 }));
 
-function renderLogin(entry = '/login') {
+function renderLogin(entry: string | { pathname: string; state: unknown } = '/login') {
   const router = createMemoryRouter(
     [
       { path: '/login', element: <LoginPage /> },
@@ -82,6 +82,11 @@ describe('LoginPage', () => {
       email: 'anna@shiftswap.test',
       password: 'secret',
     });
+  });
+
+  it('shows the notice passed in navigation state', () => {
+    renderLogin({ pathname: '/login', state: { notice: 'Your account was deleted.' } });
+    expect(screen.getByRole('status')).toHaveTextContent('Your account was deleted.');
   });
 
   it('has a link to create an account', () => {

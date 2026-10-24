@@ -95,6 +95,9 @@ export function OrgLayout() {
             <Link to="/orgs" className="text-sm text-indigo-800 underline">
               Switch organisation
             </Link>
+            <Link to="/account" className="text-sm text-indigo-800 underline">
+              Account
+            </Link>
             <Button variant="outline" onClick={() => void logOut()}>
               Log out
             </Button>
