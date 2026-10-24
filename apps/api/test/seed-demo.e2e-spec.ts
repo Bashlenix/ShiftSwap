@@ -182,6 +182,8 @@ describe('seedDemo', () => {
         orderBy: { createdAt: 'asc' },
       });
       expect(rows.every((r) => r.readAt === null)).toBe(true);
+      // Marked dispatched, so the email outbox never mails demo rows on start.
+      expect(rows.every((r) => r.emailDispatchedAt !== null)).toBe(true);
       const summary = rows.map((r) => [r.recipient.displayName, r.type]).sort();
       expect(summary).toEqual([
         ['Anna Schmidt', 'OFFER_CREATED'],

@@ -225,6 +225,8 @@ export async function seedDemo(
         organizationId: orgIds.get(shift.def.org)!,
         recipientMembershipId: memberIds.get(`${shift.def.org}|${n.recipient}`)!,
         type: n.type,
+        // Already "sent": the outbox must not email seed rows on every start.
+        emailDispatchedAt: new Date(),
         payload: {
           offerId: offerIds.get(n.shift)!,
           shiftId: shift.id,

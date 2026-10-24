@@ -1,4 +1,5 @@
 import { DynamicModule, Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ScheduleModule } from '@nestjs/schedule';
 import { LoggerModule } from 'nestjs-pino';
 import { AuthModule } from './auth/auth.module';
@@ -7,6 +8,7 @@ import { AuditModule } from './audit/audit.module';
 import { SkillsModule } from './skills/skills.module';
 import { AvailabilityModule } from './availability/availability.module';
 import { ShiftsModule } from './shifts/shifts.module';
+import { MailDispatchInterceptor } from './notifications/mail-dispatch.interceptor';
 import { NotificationsModule } from './notifications/notifications.module';
 import { OffersModule } from './offers/offers.module';
 import { OrgsModule } from './orgs/orgs.module';
@@ -58,6 +60,12 @@ export class AppModule {
         ...(env.NODE_ENV === 'test' ? [] : [ScheduleModule.forRoot()]),
       ],
       controllers: [HealthController, MeController],
+      // Email outbox dispatch after each successful write request (SDD §23); same gate as
+      // ScheduleModule, so tests drive NotificationMailer.dispatchPending directly.
+      providers:
+        env.NODE_ENV === 'test'
+          ? []
+          : [{ provide: APP_INTERCEPTOR, useExisting: MailDispatchInterceptor }],
     };
   }
 }

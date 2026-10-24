@@ -27,8 +27,14 @@ async function failure(response: Response): Promise<ApiError> {
   return new ApiError(response.status, body);
 }
 
+/**
+ * Sent on every request: the api remembers the last trusted value as the base for email deep
+ * links, which is the only way it learns the public URL inside a Codespace (SDD §23).
+ */
+const appOrigin = () => ({ 'x-app-origin': window.location.origin });
+
 export async function apiFetch<T>(path: string): Promise<T> {
-  const response = await fetch(path, { credentials: 'include' });
+  const response = await fetch(path, { credentials: 'include', headers: appOrigin() });
   if (!response.ok) throw await failure(response);
   return (await response.json()) as T;
 }
@@ -40,11 +46,11 @@ export async function apiSend<T>(
 ): Promise<T> {
   const init: RequestInit =
     body === undefined
-      ? { method, credentials: 'include' }
+      ? { method, credentials: 'include', headers: appOrigin() }
       : {
           method,
           credentials: 'include',
-          headers: { 'content-type': 'application/json' },
+          headers: { ...appOrigin(), 'content-type': 'application/json' },
           body: JSON.stringify(body),
         };
   const response = await fetch(path, init);

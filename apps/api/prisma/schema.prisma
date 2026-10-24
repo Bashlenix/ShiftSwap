@@ -334,6 +334,10 @@ model Invite {
 }
 
 // payload holds IDs, shift start/end, kind and role only (no names or free text).
+// The table doubles as the email outbox: email_dispatched_at IS NULL means "email still to send".
+// SQL-only partial index (not expressible in Prisma): notifications_email_pending_idx ON
+// notifications (created_at, id) WHERE email_dispatched_at IS NULL.
+// Lives in migration *_notification_email_outbox; future migrations must not drop it.
 model Notification {
   id                    String           @id @default(uuid())
   organizationId        String           @map("organization_id")
@@ -343,6 +347,7 @@ model Notification {
   type                  NotificationType
   payload               Json
   readAt                DateTime?        @map("read_at") @db.Timestamptz(3)
+  emailDispatchedAt     DateTime?        @map("email_dispatched_at") @db.Timestamptz(3)
   createdAt             DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([recipientMembershipId, createdAt])
