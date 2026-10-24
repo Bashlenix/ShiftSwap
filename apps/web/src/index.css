@@ -1,5 +1,54 @@
 @import 'tailwindcss';
 
-body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+/*
+ * Design tokens. Values are copied from the Tailwind palette so they stay
+ * literal (no var() chains) and every pairing below is checked for WCAG AA:
+ * brand/white 8.1:1, brand-strong/white 10.1:1, muted/white 7.6:1,
+ * muted/page 7.2:1, danger/white 6.4:1, success/white 5.4:1,
+ * control (form borders)/white 4.8:1, control/page 4.5:1.
+ */
+@theme {
+  --color-brand: oklch(45.7% 0.24 277.023); /* indigo-700 */
+  --color-brand-strong: oklch(39.8% 0.195 277.366); /* indigo-800 */
+  --color-surface: #ffffff;
+  --color-page: oklch(98.4% 0.003 247.858); /* slate-50 */
+  --color-muted: oklch(44.6% 0.043 257.281); /* slate-600 */
+  --color-control: oklch(55.4% 0.046 257.417); /* slate-500: form control borders */
+  --color-danger: oklch(50.5% 0.213 27.518); /* red-700 */
+  --color-success: oklch(50.8% 0.118 165.612); /* emerald-700 */
+
+  --radius-card: 0.75rem;
+  --shadow-soft: 0 1px 2px 0 rgb(15 23 42 / 0.05), 0 4px 16px -4px rgb(15 23 42 / 0.08);
+
+  --font-sans:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif,
+    'Apple Color Emoji', 'Segoe UI Emoji';
+}
+
+@layer base {
+  body {
+    @apply bg-page font-sans text-slate-900 antialiased;
+  }
+
+  /* A visible focus ring on everything focusable; components may refine it. */
+  :focus-visible {
+    outline: 2px solid var(--color-brand);
+    outline-offset: 2px;
+  }
+
+  input[type='checkbox'],
+  input[type='radio'] {
+    accent-color: var(--color-brand);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }

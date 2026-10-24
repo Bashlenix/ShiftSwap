@@ -144,7 +144,7 @@ describe('AccountPage', () => {
   it('does not close on an overlay click', async () => {
     renderPage();
     await openDialog();
-    const overlay = document.querySelector('.bg-black\\/50') as HTMLElement;
+    const overlay = screen.getByTestId('dialog-overlay');
     await userEvent.click(overlay);
     expect(screen.getByRole('alertdialog')).toBeVisible();
   });

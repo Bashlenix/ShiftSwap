@@ -17,11 +17,11 @@ export function Feedback({
   return (
     <div ref={containerRef} tabIndex={-1} aria-live="polite" className="min-h-6 outline-none">
       {error && (
-        <p role="alert" className="text-sm text-red-700">
+        <p role="alert" className="text-sm text-danger">
           {error}
         </p>
       )}
-      {!error && notice && <p className="text-sm text-green-800">{notice}</p>}
+      {!error && notice && <p className="text-sm text-success">{notice}</p>}
     </div>
   );
 }
