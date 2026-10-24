@@ -3,6 +3,7 @@ import { loginSchema, type LoginInput } from '@shiftswap/shared';
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router';
+import { AuthLayout } from '../../components/AuthLayout';
 import { Button } from '../../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Input } from '../../components/ui/input';
@@ -51,8 +52,8 @@ export function LoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md items-center p-4">
-      <Card className="w-full">
+    <AuthLayout>
+      <Card>
         <CardHeader>
           <CardTitle>Log in to ShiftSwap</CardTitle>
         </CardHeader>
@@ -71,7 +72,7 @@ export function LoginPage() {
               />
               <div aria-live="polite">
                 {errors.email && (
-                  <p id="email-error" className="text-sm text-red-700">
+                  <p id="email-error" className="text-sm text-danger">
                     {errors.email.message}
                   </p>
                 )}
@@ -89,7 +90,7 @@ export function LoginPage() {
               />
               <div aria-live="polite">
                 {errors.password && (
-                  <p id="password-error" className="text-sm text-red-700">
+                  <p id="password-error" className="text-sm text-danger">
                     {errors.password.message}
                   </p>
                 )}
@@ -97,7 +98,7 @@ export function LoginPage() {
             </div>
             <div aria-live="polite">
               {formError && (
-                <p role="alert" className="text-sm text-red-700">
+                <p role="alert" className="text-sm text-danger">
                   {formError}
                 </p>
               )}
@@ -108,7 +109,7 @@ export function LoginPage() {
           </form>
           <p className="mt-4 text-sm">
             <Link
-              className="font-medium text-indigo-800 underline"
+              className="font-medium text-brand-strong underline"
               to={withNext('/signup', rawNext ? next : null)}
             >
               Create an account
@@ -116,6 +117,6 @@ export function LoginPage() {
           </p>
         </CardContent>
       </Card>
-    </main>
+    </AuthLayout>
   );
 }
