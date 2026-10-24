@@ -13,6 +13,9 @@ import { orgApi, useOrg } from '../org/useOrg';
 import { useOfferMutation } from '../org/useOfferMutation';
 import { useSkillNames } from '../org/useSkillNames';
 
+/** Table action buttons may wrap to two lines on phones; let them grow past 44px. */
+const ACTION_BUTTON = 'h-auto min-h-11 py-1.5 leading-tight';
+
 export function OpenOffersPage() {
   const org = useOrg();
   const skillNames = useSkillNames();
@@ -44,26 +47,21 @@ export function OpenOffersPage() {
           <THead>
             <TR>
               <TH>Shift</TH>
+              <TH>Action</TH>
               <TH>Type</TH>
               <TH>Skills</TH>
               <TH>Location</TH>
               <TH>Status</TH>
-              <TH>Action</TH>
             </TR>
           </THead>
           <tbody>
             {offers.data.map((o) => (
               <TR key={o.id}>
                 <TH scope="row">{formatShiftTime(o.shift.startAt, o.shift.endAt, org.timezone)}</TH>
-                <TD>{o.kind === 'GIVE_AWAY' ? 'Give-away' : 'Open shift'}</TD>
-                <TD>{skillNames(o.shift.requiredSkillIds)}</TD>
-                <TD>{o.shift.location ?? '—'}</TD>
-                <TD>
-                  {o.myAcceptanceStatus ? <StatusBadge status={o.myAcceptanceStatus} /> : '—'}
-                </TD>
                 <TD>
                   {o.kind === 'OPEN_SHIFT' ? (
                     <Button
+                      className={ACTION_BUTTON}
                       disabled={mutation.isPending}
                       onClick={() => run('POST', `/offers/${o.id}/claim`)}
                     >
@@ -71,6 +69,7 @@ export function OpenOffersPage() {
                     </Button>
                   ) : o.myAcceptanceStatus === 'PENDING' ? (
                     <Button
+                      className={ACTION_BUTTON}
                       variant="outline"
                       disabled={mutation.isPending}
                       onClick={() => run('DELETE', `/offers/${o.id}/acceptances/me`)}
@@ -85,6 +84,7 @@ export function OpenOffersPage() {
                         </p>
                       )}
                       <Button
+                        className={ACTION_BUTTON}
                         disabled={mutation.isPending}
                         onClick={() => run('POST', `/offers/${o.id}/acceptances`)}
                       >
@@ -92,6 +92,12 @@ export function OpenOffersPage() {
                       </Button>
                     </div>
                   )}
+                </TD>
+                <TD>{o.kind === 'GIVE_AWAY' ? 'Give-away' : 'Open shift'}</TD>
+                <TD>{skillNames(o.shift.requiredSkillIds)}</TD>
+                <TD>{o.shift.location ?? '—'}</TD>
+                <TD>
+                  {o.myAcceptanceStatus ? <StatusBadge status={o.myAcceptanceStatus} /> : '—'}
                 </TD>
               </TR>
             ))}

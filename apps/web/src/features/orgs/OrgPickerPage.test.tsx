@@ -75,3 +75,29 @@ describe('OrgPickerPage', () => {
     expect(client.getQueryCache().getAll()).toHaveLength(0);
   });
 });
+
+describe('OrgPickerPage create link', () => {
+  beforeEach(() => {
+    apiFetch.mockReset();
+  });
+
+  it('offers Create organisation while loading', async () => {
+    apiFetch.mockReturnValue(new Promise(() => {}));
+    renderPage();
+    expect(await screen.findByText('Loading…')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Create organisation' })).toHaveAttribute(
+      'href',
+      '/orgs/new',
+    );
+  });
+
+  it('offers Create organisation after a load error', async () => {
+    apiFetch.mockRejectedValue(new Error('boom'));
+    renderPage();
+    expect(await screen.findByRole('alert')).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Create organisation' })).toHaveAttribute(
+      'href',
+      '/orgs/new',
+    );
+  });
+});

@@ -53,52 +53,50 @@ export function OrgPickerPage() {
         {data && data.memberships.length === 0 && (
           <EmptyState icon={Building2} title="You are not a member of any organisation yet." />
         )}
-        {data && (
-          <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {data.memberships.map((m) => (
-              <li key={m.organizationId}>
-                <Link
-                  to={`/orgs/${m.organizationId}`}
-                  aria-label={`${m.organizationName} · ${ACCESS_LABEL[m.accessLevel]}`}
-                  className={`${card} border-slate-200`}
-                >
-                  <span
-                    aria-hidden="true"
-                    className="grid size-11 shrink-0 place-items-center rounded-full bg-indigo-50 text-lg font-semibold text-brand-strong"
-                  >
-                    {m.organizationName.trim().charAt(0).toUpperCase()}
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
-                    <span className="max-w-full truncate font-semibold text-slate-900">
-                      {m.organizationName}
-                    </span>
-                    <Badge tone={m.accessLevel === 'EMPLOYEE' ? 'neutral' : 'brand'}>
-                      {ACCESS_LABEL[m.accessLevel]}
-                    </Badge>
-                  </span>
-                  <ChevronRight
-                    aria-hidden="true"
-                    className="size-5 shrink-0 text-muted group-hover:text-brand"
-                  />
-                </Link>
-              </li>
-            ))}
-            <li>
+        <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {(data?.memberships ?? []).map((m) => (
+            <li key={m.organizationId}>
               <Link
-                to="/orgs/new"
-                className={`${card} border-dashed border-control font-medium text-brand-strong shadow-none`}
+                to={`/orgs/${m.organizationId}`}
+                aria-label={`${m.organizationName} · ${ACCESS_LABEL[m.accessLevel]}`}
+                className={`${card} border-slate-200`}
               >
                 <span
                   aria-hidden="true"
-                  className="grid size-11 shrink-0 place-items-center rounded-full border border-dashed border-control"
+                  className="grid size-11 shrink-0 place-items-center rounded-full bg-indigo-50 text-lg font-semibold text-brand-strong"
                 >
-                  <Plus className="size-5" />
+                  {m.organizationName.trim().charAt(0).toUpperCase()}
                 </span>
-                Create organisation
+                <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
+                  <span className="max-w-full truncate font-semibold text-slate-900">
+                    {m.organizationName}
+                  </span>
+                  <Badge tone={m.accessLevel === 'EMPLOYEE' ? 'neutral' : 'brand'}>
+                    {ACCESS_LABEL[m.accessLevel]}
+                  </Badge>
+                </span>
+                <ChevronRight
+                  aria-hidden="true"
+                  className="size-5 shrink-0 text-muted group-hover:text-brand"
+                />
               </Link>
             </li>
-          </ul>
-        )}
+          ))}
+          <li>
+            <Link
+              to="/orgs/new"
+              className={`${card} border-dashed border-control font-medium text-brand-strong shadow-none`}
+            >
+              <span
+                aria-hidden="true"
+                className="grid size-11 shrink-0 place-items-center rounded-full border border-dashed border-control"
+              >
+                <Plus className="size-5" />
+              </span>
+              Create organisation
+            </Link>
+          </li>
+        </ul>
       </main>
     </div>
   );

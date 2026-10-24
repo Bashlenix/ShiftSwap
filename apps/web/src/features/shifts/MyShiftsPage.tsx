@@ -22,6 +22,8 @@ import { useOfferMutation } from '../org/useOfferMutation';
 import { useSkillNames } from '../org/useSkillNames';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+/** Table action buttons may wrap to two lines on phones; let them grow past 44px. */
+const ACTION_BUTTON = 'h-auto min-h-11 py-1.5 leading-tight';
 
 export function MyShiftsPage() {
   const org = useOrg();
@@ -88,10 +90,10 @@ export function MyShiftsPage() {
             <THead>
               <TR>
                 <TH>Time</TH>
+                <TH>Action</TH>
                 <TH>Skills</TH>
                 <TH>Location</TH>
                 <TH>Offer</TH>
-                <TH>Action</TH>
               </TR>
             </THead>
             <tbody>
@@ -104,17 +106,19 @@ export function MyShiftsPage() {
                 return (
                   <TR key={s.id}>
                     <TH scope="row">{formatShiftTime(s.startAt, s.endAt, org.timezone)}</TH>
-                    <TD>{skillNames(s.requiredSkillIds)}</TD>
-                    <TD>{s.location ?? '—'}</TD>
-                    <TD>{s.openOfferId ? <StatusBadge status="OPEN" /> : 'Not offered'}</TD>
                     <TD>
                       {canOffer && (
-                        <Button disabled={mutation.isPending} onClick={() => setConfirming(s)}>
+                        <Button
+                          className={ACTION_BUTTON}
+                          disabled={mutation.isPending}
+                          onClick={() => setConfirming(s)}
+                        >
                           Offer this shift
                         </Button>
                       )}
                       {own && (
                         <Button
+                          className={ACTION_BUTTON}
                           variant="outline"
                           disabled={mutation.isPending}
                           onClick={() =>
@@ -130,6 +134,9 @@ export function MyShiftsPage() {
                         </Button>
                       )}
                     </TD>
+                    <TD>{skillNames(s.requiredSkillIds)}</TD>
+                    <TD>{s.location ?? '—'}</TD>
+                    <TD>{s.openOfferId ? <StatusBadge status="OPEN" /> : 'Not offered'}</TD>
                   </TR>
                 );
               })}
