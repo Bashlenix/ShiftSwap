@@ -41,12 +41,20 @@ const headerLink =
  */
 function revealActivePill(nav: HTMLElement | null) {
   if (!nav || nav.scrollWidth <= nav.clientWidth) return;
+  const pill = nav.querySelector('[aria-current="page"]');
+  if (!pill) return;
+  // Scroll the nav row only. scrollIntoView would also scroll the window (the nav is not sticky
+  // on phones), jumping a reader back to the top whenever the row resizes.
+  const navLeft = nav.getBoundingClientRect().left + nav.clientLeft;
+  const { left, right } = pill.getBoundingClientRect();
+  const start = left - navLeft;
+  const end = right - navLeft;
+  let delta = 0;
+  if (start < 0) delta = start;
+  else if (end > nav.clientWidth) delta = Math.min(start, end - nav.clientWidth);
+  if (delta === 0) return;
   const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
-  nav.querySelector('[aria-current="page"]')?.scrollIntoView({
-    block: 'nearest',
-    inline: 'nearest',
-    behavior: reduced ? 'auto' : 'smooth',
-  });
+  nav.scrollTo({ left: nav.scrollLeft + delta, behavior: reduced ? 'auto' : 'smooth' });
 }
 
 interface NavItem {
@@ -99,12 +107,12 @@ export function OrgLayout() {
   );
 
   // Late content (the unread badge, the Team group) widens the pill row after mount; reveal again
-  // on every resize until the user starts scrolling or using the pills themselves.
+  // on every resize until the user scrolls the page or starts using the pills themselves.
   const navTouched = useRef(false);
-  const navObserver = useRef<ResizeObserver | null>(null);
+  const navCleanup = useRef<(() => void) | null>(null);
   const navMounted = useCallback((node: HTMLElement | null) => {
-    navObserver.current?.disconnect();
-    navObserver.current = null;
+    navCleanup.current?.();
+    navCleanup.current = null;
     if (!node) return;
     revealActivePill(node);
     if (typeof ResizeObserver === 'undefined') return;
@@ -112,7 +120,15 @@ export function OrgLayout() {
       if (!navTouched.current) revealActivePill(node);
     });
     for (const child of Array.from(node.children)) observer.observe(child);
-    navObserver.current = observer;
+    // Once the reader scrolls the page, leave the pill row alone.
+    const onWindowScroll = () => {
+      navTouched.current = true;
+    };
+    window.addEventListener('scroll', onWindowScroll, { once: true, passive: true });
+    navCleanup.current = () => {
+      observer.disconnect();
+      window.removeEventListener('scroll', onWindowScroll);
+    };
   }, []);
   const touchNav = () => {
     navTouched.current = true;

@@ -164,17 +164,38 @@ describe('OrgLayout', () => {
 
   describe('mobile nav scroll', () => {
     const scrollIntoView = vi.fn();
+    const navScrollTo = vi.fn();
+    const windowScrollTo = vi.fn();
     const restore: (() => void)[] = [];
     let observers: { targets: Element[]; fire: () => void }[] = [];
-    /** jsdom has no layout: fake an overflowing nav and the reduced-motion query. */
+    /**
+     * jsdom has no layout: fake a 390 px nav (padding box 0..390, already scrolled 100 px)
+     * whose active pill sits at 600..700, plus ResizeObserver and the reduced-motion query.
+     */
     function fakeLayout(reduced: boolean) {
       const proto = HTMLElement.prototype;
-      const sw = Object.getOwnPropertyDescriptor(proto, 'scrollWidth');
-      const cw = Object.getOwnPropertyDescriptor(proto, 'clientWidth');
+      const saved = (['scrollWidth', 'clientWidth', 'scrollLeft'] as const).map(
+        (k) => [k, Object.getOwnPropertyDescriptor(Element.prototype, k)] as const,
+      );
       Object.defineProperty(proto, 'scrollWidth', { configurable: true, get: () => 800 });
       Object.defineProperty(proto, 'clientWidth', { configurable: true, get: () => 390 });
+      Object.defineProperty(proto, 'scrollLeft', { configurable: true, get: () => 100 });
+      const rect = Element.prototype.getBoundingClientRect;
+      Element.prototype.getBoundingClientRect = function (this: Element) {
+        const [left, right] =
+          this.getAttribute('aria-current') === 'page'
+            ? [600, 700]
+            : this.tagName === 'NAV'
+              ? [0, 390]
+              : [0, 0];
+        return { left, right, top: 0, bottom: 0, width: right - left, height: 0 } as DOMRect;
+      };
       const siv = Element.prototype.scrollIntoView;
       Element.prototype.scrollIntoView = scrollIntoView;
+      const sto = Element.prototype.scrollTo;
+      Element.prototype.scrollTo = navScrollTo as typeof Element.prototype.scrollTo;
+      const wsto = window.scrollTo;
+      window.scrollTo = windowScrollTo as typeof window.scrollTo;
       const ro = globalThis.ResizeObserver;
       observers = [];
       globalThis.ResizeObserver = class {
@@ -194,61 +215,67 @@ describe('OrgLayout', () => {
         media: q,
       })) as unknown as typeof window.matchMedia;
       restore.push(() => {
-        if (sw) Object.defineProperty(proto, 'scrollWidth', sw);
-        if (cw) Object.defineProperty(proto, 'clientWidth', cw);
-        window.matchMedia = mm;
+        for (const k of ['scrollWidth', 'clientWidth', 'scrollLeft']) delete (proto as never)[k];
+        for (const [k, d] of saved) if (d) Object.defineProperty(Element.prototype, k, d);
+        Element.prototype.getBoundingClientRect = rect;
         Element.prototype.scrollIntoView = siv;
+        Element.prototype.scrollTo = sto;
+        window.scrollTo = wsto;
+        window.matchMedia = mm;
         globalThis.ResizeObserver = ro;
       });
     }
     afterEach(() => {
       restore.splice(0).forEach((r) => r());
-      scrollIntoView.mockReset();
+      for (const f of [scrollIntoView, navScrollTo, windowScrollTo]) f.mockReset();
     });
 
-    it('scrolls the active pill into view on mount', async () => {
-      fakeLayout(false);
+    const mount = async (reduced = false) => {
+      fakeLayout(reduced);
       apiFetch.mockResolvedValue(me);
       renderAt('/orgs/o1/offers');
       await screen.findByText('offers page');
-      const active = screen.getByRole('link', { current: 'page' });
-      expect(scrollIntoView).toHaveBeenCalledTimes(1);
-      expect(scrollIntoView.mock.contexts[0]).toBe(active);
-      expect(scrollIntoView).toHaveBeenCalledWith({
-        block: 'nearest',
-        inline: 'nearest',
-        behavior: 'smooth',
-      });
+      return screen.getByRole('navigation', { name: 'Main' });
+    };
+
+    it('scrolls only the nav row so the active pill is fully visible on mount', async () => {
+      const nav = await mount();
+      // Pill right edge 700 - 390 visible = 310 more than the current 100.
+      expect(navScrollTo).toHaveBeenCalledTimes(1);
+      expect(navScrollTo.mock.contexts[0]).toBe(nav);
+      expect(navScrollTo).toHaveBeenCalledWith({ left: 410, behavior: 'smooth' });
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(windowScrollTo).not.toHaveBeenCalled();
     });
 
-    it('re-reveals when the pill row resizes, until the user touches the nav', async () => {
-      fakeLayout(false);
-      apiFetch.mockResolvedValue(me);
-      renderAt('/orgs/o1/offers');
-      await screen.findByText('offers page');
+    it('re-reveals on resize without touching the page scroll, until the user touches the nav', async () => {
+      const nav = await mount();
       expect(observers).toHaveLength(1);
       expect(observers[0].targets.length).toBeGreaterThan(0);
-      expect(scrollIntoView).toHaveBeenCalledTimes(1);
+      const y = window.scrollY;
 
       act(() => observers[0].fire());
-      expect(scrollIntoView).toHaveBeenCalledTimes(2);
-      expect(scrollIntoView.mock.contexts[1]).toBe(screen.getByRole('link', { current: 'page' }));
+      expect(navScrollTo).toHaveBeenCalledTimes(2);
+      expect(navScrollTo.mock.contexts[1]).toBe(nav);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+      expect(windowScrollTo).not.toHaveBeenCalled();
+      expect(window.scrollY).toBe(y);
 
-      fireEvent.pointerDown(screen.getByRole('navigation', { name: 'Main' }));
+      fireEvent.pointerDown(nav);
       act(() => observers[0].fire());
-      expect(scrollIntoView).toHaveBeenCalledTimes(2);
+      expect(navScrollTo).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops re-revealing after the page has been scrolled', async () => {
+      await mount();
+      fireEvent.scroll(window);
+      act(() => observers[0].fire());
+      expect(navScrollTo).toHaveBeenCalledTimes(1);
     });
 
     it('jumps without animation under reduced motion', async () => {
-      fakeLayout(true);
-      apiFetch.mockResolvedValue(me);
-      renderAt('/orgs/o1/offers');
-      await screen.findByText('offers page');
-      expect(scrollIntoView).toHaveBeenCalledWith({
-        block: 'nearest',
-        inline: 'nearest',
-        behavior: 'auto',
-      });
+      await mount(true);
+      expect(navScrollTo).toHaveBeenCalledWith({ left: 410, behavior: 'auto' });
     });
   });
 });
