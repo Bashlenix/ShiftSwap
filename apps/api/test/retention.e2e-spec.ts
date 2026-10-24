@@ -17,6 +17,8 @@ describe('retention purge (SDD §27)', () => {
   beforeAll(async () => {
     ctx = await createTestApp();
     retention = ctx.app.get(RetentionService);
+    // Clears anything a previous (aborted) run left behind, so the exact counts below hold.
+    await retention.purge(now);
   });
   afterAll(async () => {
     await ctx.app.close();
@@ -194,6 +196,8 @@ describe('retention purge (SDD §27)', () => {
       .mockRejectedValueOnce(new TypeError('boom') as never);
     await expect(retention.purge(now)).rejects.toBeInstanceOf(AggregateError);
     spy.mockRestore();
+    // Leave no old shift behind for later runs.
+    await retention.purge(now);
 
     expect(await ctx.prisma.auditLog.count({ where: { id: audit.id } })).toBe(0);
     expect(await ctx.prisma.notification.count({ where: { id: notif.id } })).toBe(0);

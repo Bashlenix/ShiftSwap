@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { RetentionService } from './retention.service';
+import { RetentionError, RetentionService } from './retention.service';
 
 export const RETENTION_CRON = '0 3 * * *';
 
@@ -20,7 +20,15 @@ export class RetentionScheduler {
       const counts = await this.retention.purge(new Date());
       this.logger.log(counts);
     } catch (err) {
-      this.logger.error({ err: err instanceof Error ? err.name : typeof err });
+      const name = err instanceof Error ? err.name : typeof err;
+      if (err instanceof AggregateError) {
+        // Names only, never messages. Counts show what the other categories still purged.
+        const causes = err.errors.map((e: unknown) => (e instanceof Error ? e.name : typeof e));
+        const counts = err instanceof RetentionError ? err.counts : undefined;
+        this.logger.error({ err: name, causes, ...(counts ? { counts } : {}) });
+      } else {
+        this.logger.error({ err: name });
+      }
     }
   }
 }

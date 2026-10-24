@@ -11,6 +11,17 @@ export interface RetentionCounts {
   unavailabilities: number;
 }
 
+/** Thrown after all categories ran when at least one failed; `counts` holds what was purged. */
+export class RetentionError extends AggregateError {
+  constructor(
+    errors: unknown[],
+    readonly counts: RetentionCounts,
+  ) {
+    super(errors, 'retention purge failed');
+    this.name = 'RetentionError';
+  }
+}
+
 const SHIFT_BATCH = 500;
 const AUDIT_BATCH = 5000;
 
@@ -106,7 +117,7 @@ export class RetentionService {
     });
 
     if (failures.length > 0) {
-      throw new AggregateError(failures, 'retention purge failed');
+      throw new RetentionError(failures, counts);
     }
 
     return counts;

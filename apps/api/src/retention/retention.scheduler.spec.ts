@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { SCHEDULE_CRON_OPTIONS } from '@nestjs/schedule/dist/schedule.constants';
 import { RETENTION_CRON, RetentionScheduler } from './retention.scheduler';
-import type { RetentionService } from './retention.service';
+import { RetentionError, type RetentionService } from './retention.service';
 
 describe('RetentionScheduler', () => {
   const make = (purge: jest.Mock) =>
@@ -42,5 +42,28 @@ describe('RetentionScheduler', () => {
     await expect(make(purge).tick()).resolves.toBeUndefined();
     expect(error).toHaveBeenCalledWith({ err: 'TypeError' });
     expect(JSON.stringify(error.mock.calls)).not.toContain('secret');
+  });
+
+  it('logs inner error names and partial counts for an aggregate failure, no messages', async () => {
+    const counts = {
+      shifts: 0,
+      offers: 0,
+      acceptances: 0,
+      auditLogs: 7,
+      notifications: 8,
+      unavailabilities: 9,
+    };
+    const inner = Object.assign(new Error('secret anna@example.com'), { name: 'X' });
+    const purge = jest.fn().mockRejectedValue(new RetentionError([inner], counts));
+    await make(purge).tick();
+    expect(error).toHaveBeenCalledWith({ err: 'RetentionError', causes: ['X'], counts });
+    expect(JSON.stringify(error.mock.calls)).not.toContain('secret');
+  });
+
+  it('logs causes for a plain AggregateError without counts', async () => {
+    const inner = Object.assign(new Error('secret'), { name: 'X' });
+    const purge = jest.fn().mockRejectedValue(new AggregateError([inner], 'secret'));
+    await make(purge).tick();
+    expect(error).toHaveBeenCalledWith({ err: 'AggregateError', causes: ['X'] });
   });
 });
