@@ -37,6 +37,20 @@ tunnel() {
 # True (exit 0) when the text contains any demo account email (all use @shiftswap.test).
 logs_leak_emails() { grep -qiE 'shiftswap\.test' <<<"$1"; }
 
+# True (exit 0) when the text contains the given invite token verbatim.
+logs_leak_token() { grep -qF -- "$2" <<<"$1"; }
+
+# Creates an invited placeholder as the signed-in admin and prints the token from its link.
+# Runs before the api restart: demo data resets on start, so the extra member is gone after.
+invite_token() {
+  local org body
+  org="$(curl -s -b "$JAR" "$BASE/api/v1/me" | grep -oE '"organizationId":"[^"]+"' | head -1 | cut -d'"' -f4)"
+  body="$(curl -s -b "$JAR" -H "Origin: $ORIGIN" -H 'Content-Type: application/json' \
+    -d "{\"displayName\":\"Smoke Invitee\",\"email\":\"smoke.invitee@shiftswap.test\",\"appOrigin\":\"$ORIGIN\"}" \
+    "$BASE/api/v1/orgs/$org/members")"
+  grep -oE '/invites/[A-Za-z0-9_-]+' <<<"$body" | head -1 | cut -d/ -f3
+}
+
 main() {
   [ "$(code "$BASE/login")" = "200" ] && pass "GET /login -> 200" || fail "GET /login"
 
@@ -68,6 +82,11 @@ main() {
       && pass "Codespace-style origin rejected -> 403" || fail "Codespace-style origin not rejected"
   fi
 
+  token="$(invite_token || true)"
+  [ -n "$token" ] && pass "invite created" || fail "invite not created"
+  [ "$(code "$BASE/api/v1/invites/$token")" = "200" ] \
+    && pass "invite preview -> 200" || fail "invite preview"
+
   echo "Restarting api..."
   # shellcheck disable=SC2086 # COMPOSE_FILES is a list of flags
   docker compose $COMPOSE_FILES restart api
@@ -88,6 +107,10 @@ main() {
     fail "api logs contain demo emails"
   fi
   pass "api logs contain no demo emails"
+  if logs_leak_token "$api_logs" "$token"; then
+    fail "api logs contain the invite token"
+  fi
+  pass "api logs contain no invite token"
   echo "ALL CHECKS PASSED"
 }
 

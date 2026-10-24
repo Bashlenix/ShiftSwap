@@ -12,3 +12,14 @@ logs_leak_emails "$leak" || { echo "FAIL: leak not detected"; exit 1; }
 echo "PASS: leak detected"
 if logs_leak_emails "$big"; then echo "FAIL: false positive on clean log"; exit 1; fi
 echo "PASS: clean log accepted"
+
+token="Abc_123-xyzTOKEN"
+logs_leak_token "$big
+{\"req\":{\"url\":\"/api/v1/invites/$token\"}}
+$big" "$token" || { echo "FAIL: token leak not detected"; exit 1; }
+echo "PASS: token leak detected"
+if logs_leak_token "$big
+{\"req\":{\"url\":\"/api/v1/invites/:token\"}}" "$token"; then
+  echo "FAIL: false positive on redacted log"; exit 1
+fi
+echo "PASS: redacted log accepted"
