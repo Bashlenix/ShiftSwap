@@ -1,5 +1,6 @@
 import type { INestApplication } from '@nestjs/common';
 import { AccountModule } from '../src/account/account.module';
+import { InvitesService } from '../src/invites/invites.service';
 import { DeactivationService } from '../src/members/deactivation.service';
 import { api, createTestApp, makeMember, makeOrg, type TestCtx } from './helpers/test-app';
 
@@ -262,6 +263,131 @@ describe('DELETE /api/v1/me (account deletion, FR-23, SDD §27/§35)', () => {
 
     // A retry deactivates the membership again and completes.
     expect((await deleteMe(m.cookie)).status).toBe(204);
+  });
+
+  describe('invite accept racing deletion (lock order invites -> memberships -> users)', () => {
+    const tokenOf = (link: string) => /\/invites\/([A-Za-z0-9_-]{43})/.exec(link)![1];
+
+    /** U is an employee of org A and holds an open invite (sent to U's email) in org B. */
+    const setup = async () => {
+      const { orgId: orgA } = await makeOrg(ctx.prisma);
+      const { orgId: orgB } = await makeOrg(ctx.prisma);
+      await makeMember(ctx, orgA, { accessLevel: 'ADMIN' });
+      const adminB = await makeMember(ctx, orgB, { accessLevel: 'ADMIN' });
+      const u = await makeMember(ctx, orgA, { accessLevel: 'EMPLOYEE' });
+      const user = await ctx.prisma.user.findUniqueOrThrow({ where: { id: u.userId! } });
+      const inv = await api(app, adminB.cookie)
+        .post(`/api/v1/orgs/${orgB}/members`)
+        .send({ displayName: 'Invited U', email: user.email });
+      expect(inv.status).toBe(201);
+      return {
+        u,
+        authUser: { id: user.id, email: user.email, name: user.name },
+        token: tokenOf(inv.body.inviteLink),
+        placeholderId: inv.body.member.id as string,
+      };
+    };
+
+    it('an accept committing after deletion read the memberships aborts the deletion (409), nothing anonymised', async () => {
+      const { u, authUser, token, placeholderId } = await setup();
+      const invites = app.get(InvitesService);
+      const userId = u.userId!;
+      // Deterministic interleave: the accept commits right after the final transaction has
+      // read the user's memberships and before it locks them and updates the user row.
+      let fired = false;
+      const real = ctx.prisma.$transaction.bind(ctx.prisma);
+      const spy = jest.spyOn(ctx.prisma, '$transaction').mockImplementation(((
+        arg: unknown,
+        ...rest: unknown[]
+      ) => {
+        if (typeof arg !== 'function') return (real as any)(arg, ...rest);
+        return (real as any)(
+          async (tx: any) => {
+            const proxied = new Proxy(tx, {
+              get(target, prop) {
+                if (prop !== 'membership') return target[prop];
+                return new Proxy(target.membership, {
+                  get(m, mp) {
+                    if (mp !== 'findMany') return m[mp];
+                    return async (q: { where?: Record<string, unknown> }) => {
+                      const r = await m.findMany(q);
+                      const w = q?.where ?? {};
+                      if (!fired && w.userId === userId && w.status === undefined) {
+                        fired = true;
+                        await invites.accept(token, authUser);
+                      }
+                      return r;
+                    };
+                  },
+                });
+              },
+            });
+            return (arg as (t: unknown) => unknown)(proxied);
+          },
+          ...rest,
+        );
+      }) as never);
+      let res;
+      try {
+        res = await deleteMe(u.cookie);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(fired).toBe(true);
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe('VERSION_CONFLICT');
+      const user = await ctx.prisma.user.findUniqueOrThrow({ where: { id: userId } });
+      expect(user.deletedAt).toBeNull();
+      expect(user.email).toBe(authUser.email);
+
+      // A retry deactivates the freshly accepted membership too and completes.
+      expect((await deleteMe(u.cookie)).status).toBe(204);
+      const rows = await ctx.prisma.membership.findMany({ where: { userId } });
+      expect(rows.map((r) => r.id)).toContain(placeholderId);
+      for (const r of rows) {
+        expect(r).toMatchObject({
+          status: 'DEACTIVATED',
+          displayName: 'Deleted user',
+          email: null,
+        });
+      }
+    });
+
+    it('an accept after the deletion committed is rejected 401 UNAUTHENTICATED; placeholder stays unclaimed', async () => {
+      const { u, authUser, token, placeholderId } = await setup();
+      expect((await deleteMe(u.cookie)).status).toBe(204);
+
+      // The request passed the session guard before the deletion committed (stale user).
+      await expect(app.get(InvitesService).accept(token, authUser)).rejects.toMatchObject({
+        code: 'UNAUTHENTICATED',
+      });
+      const p = await ctx.prisma.membership.findUniqueOrThrow({ where: { id: placeholderId } });
+      expect(p.userId).toBeNull();
+      expect(
+        await ctx.prisma.membership.count({ where: { userId: u.userId!, status: 'ACTIVE' } }),
+      ).toBe(0);
+    });
+
+    it('concurrent accept and delete never leave an ACTIVE membership or a real email on a deleted user', async () => {
+      for (let i = 0; i < 8; i++) {
+        const { u, authUser, token } = await setup();
+        await Promise.allSettled([
+          app.get(InvitesService).accept(token, authUser),
+          deleteMe(u.cookie),
+        ]);
+        const user = await ctx.prisma.user.findUniqueOrThrow({ where: { id: u.userId! } });
+        if (user.deletedAt) {
+          const rows = await ctx.prisma.membership.findMany({ where: { userId: u.userId! } });
+          for (const r of rows) {
+            expect(r).toMatchObject({
+              status: 'DEACTIVATED',
+              displayName: 'Deleted user',
+              email: null,
+            });
+          }
+        }
+      }
+    });
   });
 
   it('400 for a missing or wrong confirmation, 401 without a session', async () => {

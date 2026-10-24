@@ -76,13 +76,25 @@ export class InvitesService {
       const invite = rows[0];
       if (!invite) throw notFound();
       await lockMembership(tx, invite.organization_id, invite.membership_id);
+      // Then the user row (global order invites -> memberships -> users). FOR SHARE blocks a
+      // concurrent account deletion's UPDATE of the row; once it has committed we see deleted_at.
+      // A deleted user has no session any more, so the request is unauthenticated (401).
+      const users = await tx.$queryRaw<{ deleted_at: Date | null }[]>`
+        SELECT deleted_at FROM "users" WHERE id = ${user.id} FOR SHARE`;
+      if (!users[0] || users[0].deleted_at) {
+        throw new DomainError('UNAUTHENTICATED', 'Not signed in');
+      }
       const membership = await tx.membership.findFirstOrThrow({
         where: { id: invite.membership_id, organizationId: invite.organization_id },
         select: { status: true, userId: true },
       });
 
       const state = stateOf(
-        { revokedAt: invite.revoked_at, acceptedAt: invite.accepted_at, expiresAt: invite.expires_at },
+        {
+          revokedAt: invite.revoked_at,
+          acceptedAt: invite.accepted_at,
+          expiresAt: invite.expires_at,
+        },
         membership,
         new Date(),
       );
@@ -111,7 +123,10 @@ export class InvitesService {
         }
         throw e;
       }
-      await tx.invite.updateMany({ where: { id: invite.id, organizationId: invite.organization_id }, data: { acceptedAt: new Date() } });
+      await tx.invite.updateMany({
+        where: { id: invite.id, organizationId: invite.organization_id },
+        data: { acceptedAt: new Date() },
+      });
       await this.audit.record(tx, {
         orgId: invite.organization_id,
         actorMembershipId: invite.membership_id,

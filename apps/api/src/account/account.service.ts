@@ -104,6 +104,12 @@ export class AccountService {
           deletedAt: new Date(),
         },
       });
+      // An invite accept that committed after the read above (it waits on the user row we just
+      // updated) bound a membership we did not anonymise: abort so nothing commits.
+      const missed = await tx.membership.count({ where: { userId, id: { notIn: ids } } });
+      if (missed > 0) {
+        throw new DomainError('VERSION_CONFLICT', 'A membership was changed by someone else');
+      }
       await tx.session.deleteMany({ where: { userId } });
       await tx.account.deleteMany({ where: { userId } });
       for (const m of [...memberships].sort((a, b) => byId(a.id, b.id))) {
