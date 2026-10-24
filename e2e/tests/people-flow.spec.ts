@@ -74,7 +74,8 @@ test('Maria invites a new person who creates an account and joins', async ({ pag
   await page.reload();
   await expect(page.getByRole('heading', { level: 1, name: 'Members' })).toBeVisible();
   const row = page.getByRole('row').filter({ hasText: NEW_HIRE_NAME });
-  await expect(row.getByText('Active', { exact: true })).toBeVisible();
+  // Exact badge text; the badge starts with an aria-hidden symbol, hence \W*.
+  await expect(row.getByText(/^\W*Active$/)).toBeVisible();
 });
 
 test('Tom reads and clears his notifications', async ({ page }) => {
