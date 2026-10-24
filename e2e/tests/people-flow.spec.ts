@@ -65,7 +65,7 @@ test('Maria invites a new person who creates an account and joins', async ({ pag
     await guestPage.getByLabel('Password').fill(PASSWORD);
     await paceSignIn(guestPage);
     await guestPage.getByRole('button', { name: 'Create account and join' }).click();
-    await expect(guestPage).toHaveURL(/\/orgs\/[^/]+$/);
+    await expect(guestPage).toHaveURL(/\/orgs\/[^/]+(\/me\/shifts)?$/);
   } finally {
     await guest.close();
   }
