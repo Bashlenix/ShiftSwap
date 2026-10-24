@@ -42,7 +42,15 @@ const HOUR_FIELDS: { key: HourField; label: string; name: string; min: number; m
   },
 ];
 
-const ZONES = Intl.supportedValuesOf('timeZone');
+const ZONES: string[] =
+  typeof Intl.supportedValuesOf === 'function' ? Intl.supportedValuesOf('timeZone') : [];
+
+const hoursOf = (o: OrgDto): Record<HourField, string> => ({
+  defaultWeeklyLimitMin: toHours(o.defaultWeeklyLimitMin),
+  minRestMin: toHours(o.minRestMin),
+  maxDailyMin: toHours(o.maxDailyMin),
+  offerLeadTimeMin: toHours(o.offerLeadTimeMin),
+});
 
 const toHours = (min: number) => String(Math.round(min / 6) / 10);
 
@@ -63,39 +71,36 @@ function Settings() {
       <h1 className="text-2xl font-semibold">Settings</h1>
       {orgQuery.isError && <p role="alert">Could not load the settings. Please try again.</p>}
       {orgQuery.isPending && <p>Loading…</p>}
-      {orgQuery.data && <SettingsForm current={orgQuery.data} />}
+      {orgQuery.data && <SettingsForm initial={orgQuery.data} />}
       <SkillsSection />
     </div>
   );
 }
 
-function SettingsForm({ current }: { current: OrgDto }) {
+function SettingsForm({ initial }: { initial: OrgDto }) {
   const org = useOrg();
   const queryClient = useQueryClient();
-  const [name, setName] = useState(current.name);
-  const [timezone, setTimezone] = useState(current.timezone);
-  // Display strings are lossy (1235 min shows as 20.6 h), so untouched fields are never re-sent.
-  const [initialHours] = useState<Record<HourField, string>>({
-    defaultWeeklyLimitMin: toHours(current.defaultWeeklyLimitMin),
-    minRestMin: toHours(current.minRestMin),
-    maxDailyMin: toHours(current.maxDailyMin),
-    offerLeadTimeMin: toHours(current.offerLeadTimeMin),
-  });
+  // What the server holds now; updated from each save response so later edits diff against it.
+  // Hour strings are lossy (1235 min shows as 20.6 h), so untouched fields are never re-sent.
+  const [saved, setSaved] = useState(initial);
+  const initialHours = hoursOf(saved);
+  const [name, setName] = useState(initial.name);
+  const [timezone, setTimezone] = useState(initial.timezone);
   const [hours, setHours] = useState<Record<HourField, string>>(initialHours);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<HourField, string>>>({});
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  const zones = ZONES.includes(current.timezone) ? ZONES : [...ZONES, current.timezone];
+  const zones = ZONES.includes(saved.timezone) ? ZONES : [...ZONES, saved.timezone];
 
   async function save(e: FormEvent) {
     e.preventDefault();
     setError(null);
     setNotice(null);
     const changes: OrgSettingsInput = {};
-    if (name.trim() !== current.name) changes.name = name.trim();
-    if (timezone !== current.timezone) changes.timezone = timezone;
+    if (name.trim() !== saved.name) changes.name = name.trim();
+    if (timezone !== saved.timezone) changes.timezone = timezone;
     const errors: Partial<Record<HourField, string>> = {};
     for (const { key, name, min, max } of HOUR_FIELDS) {
       const raw = hours[key].trim();
@@ -114,7 +119,9 @@ function SettingsForm({ current }: { current: OrgDto }) {
     }
     setPending(true);
     try {
-      await apiSend<OrgDto>('PATCH', orgApi(org, ''), changes);
+      const dto = await apiSend<OrgDto>('PATCH', orgApi(org, ''), changes);
+      setSaved(dto);
+      setHours(hoursOf(dto));
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['me'] }),
         queryClient.invalidateQueries({ queryKey: ['org', org.organizationId] }),
@@ -174,7 +181,10 @@ function SettingsForm({ current }: { current: OrgDto }) {
             aria-invalid={fieldErrors[key] ? true : undefined}
             aria-describedby={fieldErrors[key] ? `org-${key}-error` : undefined}
             value={hours[key]}
-            onChange={(e) => setHours({ ...hours, [key]: e.target.value })}
+            onChange={(e) => {
+              setHours({ ...hours, [key]: e.target.value });
+              setFieldErrors((prev) => ({ ...prev, [key]: undefined }));
+            }}
           />
           {fieldErrors[key] && (
             <p id={`org-${key}-error`} role="alert" className="text-sm text-red-700">

@@ -103,6 +103,9 @@ describe('SkillsSection', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Keep skill' }));
     expect(apiSend).not.toHaveBeenCalled();
     expect(screen.getByRole('button', { name: 'Delete Kitchen' })).toBeVisible();
+    await vi.waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Delete Kitchen' })).toHaveFocus(),
+    );
   });
 
   it.each([
@@ -115,5 +118,8 @@ describe('SkillsSection', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Delete Kitchen' }));
     await userEvent.click(screen.getByRole('button', { name: 'Yes, delete' }));
     expect(await screen.findByRole('alert')).toHaveTextContent(text);
+    await vi.waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Delete Kitchen' })).toHaveFocus(),
+    );
   });
 });

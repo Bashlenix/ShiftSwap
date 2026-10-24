@@ -192,4 +192,35 @@ describe('SettingsPage', () => {
       defaultWeeklyLimitMin: 4800,
     });
   });
+
+  it('diffs against the saved values, not the page-load values', async () => {
+    setup();
+    apiSend.mockImplementation((_m: string, _p: string, body: { defaultWeeklyLimitMin: number }) =>
+      Promise.resolve({ ...orgDto, defaultWeeklyLimitMin: body.defaultWeeklyLimitMin }),
+    );
+    const input = await screen.findByLabelText('Weekly hour limit (h)');
+    for (const v of ['41', '40']) {
+      await userEvent.clear(input);
+      await userEvent.type(input, v);
+      await userEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+      await screen.findByText('Settings saved.');
+    }
+    expect(apiSend).toHaveBeenNthCalledWith(1, 'PATCH', '/api/v1/orgs/org-1', {
+      defaultWeeklyLimitMin: 2460,
+    });
+    expect(apiSend).toHaveBeenNthCalledWith(2, 'PATCH', '/api/v1/orgs/org-1', {
+      defaultWeeklyLimitMin: 2400,
+    });
+  });
+
+  it('clears a field error when the field is edited', async () => {
+    setup();
+    const input = await screen.findByLabelText('Weekly hour limit (h)');
+    await userEvent.clear(input);
+    await userEvent.type(input, '99');
+    await userEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+    await screen.findByText('Weekly hour limit must be between 1 and 80 hours.');
+    await userEvent.type(input, '1');
+    expect(screen.queryByText('Weekly hour limit must be between 1 and 80 hours.')).toBeNull();
+  });
 });

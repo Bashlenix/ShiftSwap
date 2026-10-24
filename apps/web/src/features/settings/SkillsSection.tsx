@@ -36,7 +36,15 @@ export function SkillsSection() {
     queryFn: () => apiFetch<SkillDto[]>(orgApi(org, '/skills')),
   });
 
-  async function run(work: () => Promise<void>, done: string) {
+  /** The confirm group unmounts, so focus the row's Delete button once it is back. */
+  function focusDelete(id: string) {
+    setTimeout(
+      () => (document.getElementById(`delete-skill-${id}`) ?? headingRef.current)?.focus(),
+      0,
+    );
+  }
+
+  async function run(work: () => Promise<void>, done: string, onFail?: () => void) {
     setPending(true);
     setError(null);
     setNotice(null);
@@ -47,6 +55,7 @@ export function SkillsSection() {
       headingRef.current?.focus();
     } catch (err) {
       setError(skillError(err));
+      onFail?.();
     } finally {
       setPending(false);
     }
@@ -148,6 +157,7 @@ export function SkillsSection() {
                           void run(
                             () => apiSend('DELETE', orgApi(org, `/skills/${s.id}`)),
                             'Skill deleted.',
+                            () => focusDelete(s.id),
                           );
                         }}
                       >
@@ -156,7 +166,10 @@ export function SkillsSection() {
                       <Button
                         variant="outline"
                         className="h-8 px-3"
-                        onClick={() => setConfirming(null)}
+                        onClick={() => {
+                          setConfirming(null);
+                          focusDelete(s.id);
+                        }}
                       >
                         Keep skill
                       </Button>
@@ -166,6 +179,7 @@ export function SkillsSection() {
                       variant="outline"
                       className="h-8 px-3"
                       disabled={pending}
+                      id={`delete-skill-${s.id}`}
                       aria-label={`Delete ${s.name}`}
                       onClick={() => setConfirming(s.id)}
                     >
