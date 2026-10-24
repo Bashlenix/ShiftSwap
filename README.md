@@ -39,7 +39,7 @@ Seeded shifts are relative to today (Europe/Berlin) and reset on every API start
 6. Log in as Maria → Members → Deactivate Mia → her future shifts show as open shifts in Schedule.
 7. Log in as Anna → Availability → Weekly preferences: set a time to Preferred or Avoid. Preferences only affect ranking; they never block a shift. Lukas and Mia have seeded preferences that change the ranking Tom sees in step 1 (Lukas +40, Mia +0).
 8. Swap events send email: after Tom approves Lukas in step 1, Lukas gets an email in the demo inbox (`/mailpit/`).
-9. Log in as any demo account → Account → Delete account. Deleting a demo account lasts only until the Codespace restarts, because the demo data is re-seeded on every API start.
+9. Log in as a non-admin demo account (for example Anna or Mia) → Account → Delete account. Deleting a demo account lasts only until the Codespace restarts, because the demo data is re-seeded on every API start. Maria and Sara are the only admins of their organisations, so deleting them is blocked with "You are the last admin of {organisation name}. Make another member an admin first."
 
 Demo inbox: open `/mailpit/` on the app address (the same address as the app, for example `<app address>/mailpit/`).
 
