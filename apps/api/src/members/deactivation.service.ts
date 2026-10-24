@@ -333,7 +333,7 @@ export class DeactivationService {
         org.orgId,
         pending.map((a) => a.membershipId),
         'ACCEPTANCE_INVALIDATED',
-        offerPayload(after, shift, 'candidate'),
+        { ...offerPayload(after, shift, 'candidate'), reason: 'OWNER_DEACTIVATED' },
         org.membershipId,
       );
     }

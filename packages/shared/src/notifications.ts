@@ -21,6 +21,8 @@ export interface NotificationPayload {
   shiftEndAt?: string;
   kind?: OfferKind;
   role?: 'owner' | 'candidate' | 'selected' | 'notSelected' | 'manager' | 'eligible';
+  /** Why an ACCEPTANCE_INVALIDATED happened when the offer itself is gone (a code, not text). */
+  reason?: 'OWNER_DEACTIVATED';
 }
 
 export interface NotificationDto {

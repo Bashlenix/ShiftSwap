@@ -5,7 +5,7 @@ const FALLBACK = 'You have a new notification.';
 
 /** Plain-English text for a notification; never throws, unknown shapes get the fallback. */
 export function notificationText(n: NotificationDto, timezone: string): string {
-  const { shiftStartAt, shiftEndAt, role } = n.payload ?? {};
+  const { shiftStartAt, shiftEndAt, role, reason } = n.payload ?? {};
   if (n.type === 'MEMBER_DEACTIVATED')
     return 'A member was deactivated; their shifts were reposted.';
   if (!shiftStartAt || !shiftEndAt) return FALLBACK;
@@ -32,6 +32,9 @@ export function notificationText(n: NotificationDto, timezone: string): string {
     case 'OFFER_EXPIRED':
       return `The offer for ${time} expired.`;
     case 'ACCEPTANCE_INVALIDATED':
+      // The give-away was cancelled (SDD §17); its shift may have been reposted as open.
+      if (reason === 'OWNER_DEACTIVATED')
+        return `The offer for ${time} was cancelled — check open shifts if you still want it.`;
       return `The shift ${time} changed — accept again if you still want it.`;
     case 'OPEN_SHIFT_FILLED':
       if (role === 'selected') return `You claimed the shift ${time}.`;

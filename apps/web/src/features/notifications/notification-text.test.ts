@@ -42,6 +42,14 @@ describe('notificationText', () => {
     expect(text(type, role)).toBe(expected);
   });
 
+  it('ACCEPTANCE_INVALIDATED because the owner was deactivated: the offer is gone, no "accept again"', () => {
+    const note = n('ACCEPTANCE_INVALIDATED', 'candidate');
+    note.payload.reason = 'OWNER_DEACTIVATED';
+    expect(notificationText(note, 'Europe/Berlin')).toBe(
+      `The offer for ${T} was cancelled — check open shifts if you still want it.`,
+    );
+  });
+
   it('never crashes on unknown combinations or missing times', () => {
     expect(text('OFFER_CREATED', 'owner')).toBe('You have a new notification.');
     expect(text('OFFER_APPROVED')).toBe('You have a new notification.');

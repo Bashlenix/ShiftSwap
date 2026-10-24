@@ -227,7 +227,11 @@ describe('deactivate / reactivate members (FR-15, SDD §17)', () => {
       });
     const invalidated = await notes(lukas.membershipId, 'ACCEPTANCE_INVALIDATED');
     expect(invalidated).toHaveLength(1);
-    expect(invalidated[0].payload).toMatchObject({ offerId: ga.offerId, role: 'candidate' });
+    expect(invalidated[0].payload).toMatchObject({
+      offerId: ga.offerId,
+      role: 'candidate',
+      reason: 'OWNER_DEACTIVATED',
+    });
     const tomDeact = await notes(tom.membershipId, 'MEMBER_DEACTIVATED');
     expect(tomDeact).toHaveLength(1);
     expect(tomDeact[0].payload).toEqual({});
